@@ -40,10 +40,11 @@ image: build $(FIT_IMAGE)
 	@echo ""
 	@echo "===== 开发板交付物已生成 ====="
 	@echo "  FIT 镜像  : $(FIT_IMAGE)"
+	@echo "  磁盘镜像  : $(DISKIMG)"
 	@echo ""
 	@echo "  部署步骤 (详见 docs/board-deploy.md):"
 	@echo "   1) 把 SD 卡第一个分区格式化为 FAT32"
-	@echo "   2) 拷贝 $(FIT_IMAGE) 到该分区"
+	@echo "   2) 拷贝 $(FIT_IMAGE) 与 $(DISKIMG) 到该分区"
 	@echo "   3) 串口连接开发板 (115200 8N1), 上电"
 	@echo "   4) 在 U-Boot 提示符下执行:"
 	@echo "        $(UBOOT_BOOT_CMD)"
@@ -56,6 +57,7 @@ image: build
 	@echo ""
 	@echo "===== QEMU 运行镜像已就绪 ====="
 	@echo "  内核     : $(KERNEL_ELF)"
+	@echo "  磁盘镜像 : $(DISKIMG)"
 	@echo "  运行     : make CONFIG=$(CONFIG) run"
 
 endif

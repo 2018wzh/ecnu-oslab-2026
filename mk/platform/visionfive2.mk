@@ -27,6 +27,7 @@ PLATFORM_INCLUDES := -I$(PLATFORM_DIR)
 PLATFORM_DRIVERS := \
 	drivers/serial/uart16550.c \
 	drivers/irqchip/plic.c \
+	drivers/block/sdhci.c \
 
 # ---- 运行配置 --------------------------------------------------------------
 # VisionFive2 通过 U-Boot 加载, 没有 QEMU 参数。

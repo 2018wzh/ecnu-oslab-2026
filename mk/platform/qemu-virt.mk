@@ -25,6 +25,28 @@ PLATFORM_INCLUDES := -I$(PLATFORM_DIR)
 PLATFORM_DRIVERS := \
 	drivers/serial/uart16550.c \
 	drivers/irqchip/plic.c \
+	drivers/block/virtio_blk.c \
 
-# ---- 运行配置 ----------------------------------------------------
+# ---- 运行配置 --------------------------------------------------------------
 QEMU_MACHINE := virt
+
+# 【挂给 QEMU 的是磁盘镜像的一份**拷贝**, 不是镜像本身】
+#
+# 为什么这一点很重要: 内核会**写**这块盘 (文件系统、创建文件)。
+# 如果直接把 build/.../disk.img 挂进去, 一次运行就会把它改脏 ——
+# 而 make 不知道这件事 (它的时间戳没变), 于是**下一次运行看到的是
+# 上一次留下的文件系统**:
+#
+#   第一次运行: 根目录只有 mkfs 放进去的 test_1..test_4
+#   第二次运行: 根目录多出上次测试创建的文件
+#
+# 对实验验收来说这是致命的: README 里写的"期望输出"只对第一次运行成立,
+# 而学生第一次跑出来的和第二次跑出来的不一样, 却找不到原因。
+#
+# 所以每次运行都从镜像复制一份出来跑。复制很小 (1 MB), 代价可以忽略。
+# 用递归展开 (=) 而不是立即展开 (:=): DISKIMG 由 mk/build.mk 定义,
+# 而 build.mk 在本文件之后才被 include。写成 := 的话这里会展开成空串,
+# QEMU 就会收到 `-drive file=` 并直接报错。
+QEMU_RUN_DISK = $(BUILD_DIR)/disk-run.img
+QEMU_DRIVE_ARGS = -drive file=$(QEMU_RUN_DISK),if=none,format=raw,id=x0 \
+                  -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0

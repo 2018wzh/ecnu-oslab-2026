@@ -71,5 +71,9 @@ int platform_dispatch_irq(int irq)
 		uart_intr();
 		return 1;
 	}
+	if (irq == PLAT_VIRTIO0_IRQ) {
+		virtio_disk_intr();
+		return 1;
+	}
 	return 0;
 }

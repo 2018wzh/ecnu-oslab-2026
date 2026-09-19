@@ -9,10 +9,11 @@
 #include <kernel/mm.h>
 #include <kernel/proc.h>
 #include <kernel/fs.h>
+#include <kernel/block.h>
 #include <uapi/syscall.h>
 
 /* --------------------------------------------------------------------------
- * helloworld (lab-4 起): 内核打印固定字符串, 不经 fd 表。
+ * helloworld (lab-4 起): 内核打印固定字符串, 不经 fd 表。文件抽象属 lab-9。
  * -------------------------------------------------------------------------- */
 int64 sys_helloworld(void)
 {
@@ -26,7 +27,7 @@ int64 sys_helloworld(void)
 
 int64 sys_write(int fd, uint64 buf, uint64 n)
 {
-	/* fd 表与文件抽象属 lab-9; 前面阶段用户输出走 SYS_HELLOWORLD。 */
+	/* fd 表与文件抽象属 lab-9; 本阶段用户输出走 SYS_HELLOWORLD。 */
 	(void)fd; (void)buf; (void)n;
 	return E_NOSYS;
 }

@@ -6,6 +6,7 @@
 #include <kernel/types.h>
 #include <kernel/print.h>
 #include <kernel/mm.h>
+#include <kernel/block.h>
 #include <kernel/arch.h>
 #include <kernel/proc.h>
 #include <kernel/irq.h>
@@ -58,11 +59,30 @@ int main(void)
                  * 而且"没有可运行进程"时无路可退。 */
                 sched_init_hart();
 
-                /* 中断控制器 (全局部分只需一次) */
+
+                // 中断控制器: 全局部分只需一次
+                block_init();
+
+
+                // 文件系统: 依赖块设备就绪, 顺序不能颠倒。
+                // 需要条件编译: fs_init 属 lab-8, 在 lab-4..7 文件系统源码未入
+                // 构建, 直接调用会链接失败; 用阶段判断排除, 同一份 main.c 服务
+                // 所有 lab 阶段。
                 plic_init();
 
+                {
+                        static uint8 blkbuf[BLOCK_SIZE];
+                        if (block_read(0, blkbuf, 1) == 0) {
+                                printf("[main] 块设备自检: 块 0 前 16 字节 =");
+                                for (int i = 0; i < 16; i++)
+                                        printf(" %02x", blkbuf[i]);
+                                printf("\n");
+                        } else {
+                                printf("[main] 块设备自检: 读块 0 失败!\n");
+                        }
+                }
 
-                // 块设备: 平台相关 (VirtIO 或 SD 卡)。lab-7 内容。
+                /* trap 系统 */
                 trap_arch_init();
 
 

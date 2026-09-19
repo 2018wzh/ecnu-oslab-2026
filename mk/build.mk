@@ -45,6 +45,9 @@ KERNEL_CORE_CSRCS := \
 	kernel/mm/uvm.c \
 	kernel/sched/sched.c \
 	kernel/sync/sleeplock.c \
+	kernel/fs/block.c \
+	kernel/fs/bio.c \
+	kernel/fs/bitmap.c \
 
 # ---- 3. 汇总所有源文件 -----------------------------------------------------
 KERNEL_ALL_CSRCS := $(KERNEL_CORE_CSRCS) $(ARCH_CSRCS) $(PLATFORM_CSRCS) $(PLATFORM_DRIVERS) $(BOOT_CSRCS)
@@ -189,6 +192,19 @@ $(INITCODE_H): $(USER_INIT_OBJ) $(USER_LD)
 # 来自同一个来源, 不会出现"两边各写一个数字然后不一致"的问题。
 CFLAGS += -DINITCODE_LOAD_ADDR=$(INITCODE_ADDR)
 
+# ---- 9. 磁盘镜像 -----------------------------------------------------------
+DISKIMG := $(BUILD_DIR)/disk.img
+MKFS    := $(BUILD_DIR)/host/mkfs
+
+$(MKFS): tools/mkfs/mkfs.c
+	@mkdir -p $(dir $@)
+	$(HOSTCC) $(HOSTCFLAGS) -Itools/mkfs -o $@ $<
+	@echo "  [host-cc] mkfs  (注意: 用宿主编译器, 不是交叉编译器)"
+
+$(DISKIMG): $(MKFS) $(USER_TEST_ELF)
+	$(MKFS) $@ $(USER_TEST_ELF)
+	@echo "  [mkfs] $@"
+
 # ---- 9.1 initcode 嵌入 -----------------------------------------------------
 # 把生成的 initcode.h 放到 include 路径下, 这样 kernel/proc/exec.c
 # 只要 #include <initcode.h> 就能拿到数组。
@@ -210,12 +226,14 @@ CFLAGS += -I$(GEN_INCLUDE)
 
 # ---- 10. 主构建目标 --------------------------------------------------------
 .PHONY: build
-build: $(KERNEL_ELF) $(INITCODE_H)
+build: $(KERNEL_ELF) $(INITCODE_H) $(DISKIMG)
 	@echo ""
 	@echo "===== 构建成功 ====="
 	@echo "  配置      : $(CONFIG)"
 	@echo "  内核      : $(KERNEL_ELF)"
+	@echo "  磁盘镜像  : $(DISKIMG)"
 	@echo ""
+	@echo "  下一步: make CONFIG=$(CONFIG) run"
 
 .PHONY: kernel
 kernel: $(KERNEL_ELF)
