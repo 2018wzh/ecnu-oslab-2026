@@ -44,6 +44,12 @@ typedef struct proc {
 
 	/* ---- 打开文件表 (每个进程一份, 索引即 fd) ----
 	 * 约定: 0=stdin, 1=stdout, 2=stderr, 其余由 open 分配。 */
+	uint64 heap_top;            /* 用户堆顶 (字节地址, sbrk 维护) */
+	uint64 ustack_npage;        /* 用户栈已映射的页面数 */
+	mmap_region_t *mmap;        /* 用户 mmap 区域链表的头节点 */
+
+/* 进程管理接口 (generic kernel): struct proc 里的 ctx 字段类型是 context_t,
+ * 进程逻辑 generic, 上下文布局交给 arch 层定义, 换架构不必改 struct proc。 */
 	uint64 chan;                /* 睡眠等待的通道 (类似 xv6 的做法) */
 	int killed;                 /* 是否被要求退出 */
 	uint64 exit_status;         /* 退出码, 供父进程读取 */

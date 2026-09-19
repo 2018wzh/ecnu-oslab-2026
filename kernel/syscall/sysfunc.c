@@ -10,6 +10,10 @@
 #include <kernel/proc.h>
 #include <kernel/fs.h>
 #include <uapi/syscall.h>
+
+/* --------------------------------------------------------------------------
+ * helloworld: 内核打印固定字符串 (本阶段唯一需要的系统调用)
+ * -------------------------------------------------------------------------- */
 int64 sys_helloworld(void)
 {
 	printf("proczero: hello world\n");
@@ -22,7 +26,7 @@ int64 sys_helloworld(void)
 
 int64 sys_write(int fd, uint64 buf, uint64 n)
 {
-	/* 文件描述符与文件抽象在 lab-9 才出现。lab-4 的用户进程输出走
+	/* 文件描述符与文件抽象在 lab-9 才出现。lab-4/5 的用户进程输出走
 	 * SYS_HELLOWORLD (内核打印固定字符串), 不需要 write。 */
 	(void)fd; (void)buf; (void)n;
 	return E_NOSYS;
@@ -81,4 +85,24 @@ int64 sys_wait(uint64 status_user)
 }
 int64 sys_exec(uint64 path_user, uint64 argv_user)
 {
+}
+
+
+	// 把整个可执行文件读进内核内存。不在读取时直接映射: 解析 ELF 要先看头部
+	// 才知道映射哪些段, 先整读最简单可靠 (教学内核不必流式加载; 真实内核用
+	// mmap 按需映射支持几百 MB 文件)。
+int64 sys_brk(uint64 new_brk)
+{
+        /* 调整用户堆顶。new_brk=0 表示询问当前堆顶。
+         * 内部调用 uvm_heap_grow / uvm_heap_ungrow。 */
+}
+
+int64 sys_mmap(uint64 len)
+{
+        /* 在 mmap 区域申请一块 len 字节的连续地址空间并映射。 */
+}
+
+int64 sys_munmap(uint64 addr, uint64 len)
+{
+        /* 解除一段 mmap 区域。 */
 }

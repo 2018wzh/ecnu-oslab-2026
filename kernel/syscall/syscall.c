@@ -39,13 +39,18 @@ extern int64 sys_exit(int status);
 extern int64 sys_fork(void);
 extern int64 sys_exec(uint64 path, uint64 argv);
 extern int64 sys_wait(uint64 status);
+extern int64 sys_brk(uint64 new_brk);
+extern int64 sys_mmap(uint64 len);
+extern int64 sys_munmap(uint64 addr, uint64 len);
 
-/* --------------------------------------------------------------------------
- * 系统调用分发
- *
- * 返回值写入 trapframe 的 a0, 这样返回用户态后用户程序能在 a0 里拿到结果。
- * -------------------------------------------------------------------------- */
 
+// 系统调用分发 (generic kernel)。
+// 系统调用是用户态与内核态之间唯一的合法通道。
+// 调用链: 用户把调用号放 a7、参数放 a0-a5 后 ecall -> 硬件陷入 S-mode ->
+// entry.S 保存现场并调 trap_user_handler -> trap.c 识别 ecall from U ->
+// 本文件从 trapframe 取 a7/a0-a2 分发到各 sys_* 实现。
+// 参数从 trapframe 取而非函数参数: 那些值已被保存在内核栈上的 trapframe 里,
+// 所以 trapframe 字段布局必须与汇编严格一致。
 uint64 trap_handle_syscall(trapframe_t *tf)
 {
 }

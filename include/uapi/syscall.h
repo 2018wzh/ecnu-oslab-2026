@@ -5,8 +5,7 @@
 #define __UAPI_SYSCALL_H__
 
 /* 系统调用号: 从 1 开始 (0 保留为"非法") */
-/* lab-4: 第一个用户进程通过这一个系统调用让内核打印"hello world"。 */
-#define SYS_HELLOWORLD  0   /* 内核打印固定字符串 (lab-4 唯一需要的系统调用) */
+#define SYS_HELLOWORLD  0   /* 内核打印固定字符串 (lab-4 对齐 2025) */
 
 #define SYS_EXIT    1   /* 退出当前进程 */
 #define SYS_FORK    2   /* 创建子进程 */
@@ -14,13 +13,15 @@
 #define SYS_WRITE   4   /* 写文件/设备 */
 #define SYS_EXEC    5   /* 执行可执行文件 */
 #define SYS_WAIT    6   /* 等待子进程结束 */
-#define SYS_MMAP    9   /* 内存映射 */
+#define SYS_BRK     8   /* 调整堆边界 (lab-5) */
+#define SYS_MMAP    9   /* 内存映射 (lab-5) */
+#define SYS_MUNMAP  14  /* 解除内存映射 (lab-5) */
 #define SYS_GETPID  10  /* 取当前进程号 (调试用) */
 #define SYS_OPEN    11  /* lab-9: 打开文件 */
 #define SYS_CLOSE   12  /* lab-9: 关闭文件 */
 #define SYS_LSEEK   13  /* lab-9: 移动读写位置 */
 
-#define SYS_MAX     14
+#define SYS_MAX     15
 
 /* 系统调用号 (用户态接口, UAPI): 被内核与用户程序共同包含,
  * 构成用户态可见契约 (调用号/参数约定/错误码), 不得含内核私有结构。
