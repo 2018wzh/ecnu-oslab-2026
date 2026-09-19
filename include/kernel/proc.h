@@ -41,12 +41,9 @@ typedef struct proc {
 
 	/* ---- 地址空间 ---- */
 	pgtbl_t pgtbl;              /* 用户页表 */
-
-	/* ---- 打开文件表 (每个进程一份, 索引即 fd) ----
-	 * 约定: 0=stdin, 1=stdout, 2=stderr, 其余由 open 分配。 */
-	uint64 heap_top;            /* 用户堆顶 (字节地址, sbrk 维护) */
-	uint64 ustack_npage;        /* 用户栈已映射的页面数 */
-	mmap_region_t *mmap;        /* 用户 mmap 区域链表的头节点 */
+	uint64 heap_top;            /* 用户堆顶 */
+	uint64 ustack_npage;        /* 用户栈页数 */
+	mmap_region_t *mmap;        /* mmap 区域链表头 */
 
 /* 进程管理接口 (generic kernel): struct proc 里的 ctx 字段类型是 context_t,
  * 进程逻辑 generic, 上下文布局交给 arch 层定义, 换架构不必改 struct proc。 */
@@ -114,5 +111,13 @@ proc_t *proc_table_base(void);
 
 /* 设置/更新当前 CPU 上运行的进程 */
 void proc_set_current(proc_t *p);
+void sched_init_hart(void);
+
+// 切换到下一个就绪进程。调用前不得持有任何自旋锁 (否则可能死锁);
+// "返回两次": 本进程重新被调度时从调用点之后继续; 无就绪进程时可能切到 idle。
+
+/* 进程管理接口 (generic kernel): struct proc 里的 ctx 字段类型是 context_t,
+ * 进程逻辑 generic, 上下文布局交给 arch 层定义, 换架构不必改 struct proc。 */
+void sched_switch(void);
 
 #endif /* __KERNEL_PROC_H__ */

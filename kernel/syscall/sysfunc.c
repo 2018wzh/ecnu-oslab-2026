@@ -12,7 +12,7 @@
 #include <uapi/syscall.h>
 
 /* --------------------------------------------------------------------------
- * helloworld: 内核打印固定字符串 (本阶段唯一需要的系统调用)
+ * helloworld (lab-4 起): 内核打印固定字符串, 不经 fd 表。
  * -------------------------------------------------------------------------- */
 int64 sys_helloworld(void)
 {
@@ -26,8 +26,7 @@ int64 sys_helloworld(void)
 
 int64 sys_write(int fd, uint64 buf, uint64 n)
 {
-	/* 文件描述符与文件抽象在 lab-9 才出现。lab-4/5 的用户进程输出走
-	 * SYS_HELLOWORLD (内核打印固定字符串), 不需要 write。 */
+	/* fd 表与文件抽象属 lab-9; 前面阶段用户输出走 SYS_HELLOWORLD。 */
 	(void)fd; (void)buf; (void)n;
 	return E_NOSYS;
 }
@@ -68,12 +67,11 @@ int64 sys_getpid(void)
 }
 int64 sys_exit(int status)
 {
-
-	// 释放进程资源。顺序: 先关文件, 再释放地址空间, 最后标 ZOMBIE 并让出 CPU。
-	// 若先让出 CPU, 后面的清理代码永远不会执行。
-	(void)status;
-	for (;;)
-		asm volatile("wfi");
+	proc_t *p = myproc();
+	if (!p)
+		return E_BADARG;
+	proc_exit((int)status);
+	return E_OK;   /* 不会到达 */
 }
 
 int64 sys_fork(void)
@@ -93,16 +91,15 @@ int64 sys_exec(uint64 path_user, uint64 argv_user)
 	// mmap 按需映射支持几百 MB 文件)。
 int64 sys_brk(uint64 new_brk)
 {
-        /* 调整用户堆顶。new_brk=0 表示询问当前堆顶。
-         * 内部调用 uvm_heap_grow / uvm_heap_ungrow。 */
 }
-
 int64 sys_mmap(uint64 len)
 {
-        /* 在 mmap 区域申请一块 len 字节的连续地址空间并映射。 */
 }
-
 int64 sys_munmap(uint64 addr, uint64 len)
 {
-        /* 解除一段 mmap 区域。 */
+}
+
+/* 睡 n 个 tick (对齐 2025 lab-6: proc_sleep + 时钟唤醒)。 */
+int64 sys_sleep(int n)
+{
 }

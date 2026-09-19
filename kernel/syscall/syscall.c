@@ -39,6 +39,7 @@ extern int64 sys_exit(int status);
 extern int64 sys_fork(void);
 extern int64 sys_exec(uint64 path, uint64 argv);
 extern int64 sys_wait(uint64 status);
+extern int64 sys_sleep(int n);
 extern int64 sys_brk(uint64 new_brk);
 extern int64 sys_mmap(uint64 len);
 extern int64 sys_munmap(uint64 addr, uint64 len);

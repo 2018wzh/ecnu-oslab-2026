@@ -107,9 +107,7 @@ void uvm_free(pgtbl_t pgtbl, uint64 sz);
 
 
 /* --------------------------------------------------------------------------
- * mmap_region (对齐 2025 lab-5 任务 3-4: 用户态 mmap 区域管理)
- * 一个 mmap_region 描述一块连续地址空间 [begin, begin+npages*PGSIZE)。
- * 进程通过单链表记录其地址空间中的全部 mmap 区域。
+ * mmap_region (对齐 2025 lab-5 任务 3-4): 用户态 mmap 区域管理
  * -------------------------------------------------------------------------- */
 typedef struct mmap_region {
         uint64 begin;                 /* 起始虚拟地址 */
@@ -117,8 +115,6 @@ typedef struct mmap_region {
         struct mmap_region *next;     /* 链表指针 */
 } mmap_region_t;
 
-/* 内存管理接口 (generic kernel): 定义物理页、地址空间、映射、权限等通用概念;
- * 页表项编码等架构细节在 arch 层, generic VM 算法不拼页表位。 */
 typedef struct mmap_region_node {
         mmap_region_t mmap;
         struct mmap_region_node *next;

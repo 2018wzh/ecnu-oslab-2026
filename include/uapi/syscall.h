@@ -5,7 +5,7 @@
 #define __UAPI_SYSCALL_H__
 
 /* 系统调用号: 从 1 开始 (0 保留为"非法") */
-#define SYS_HELLOWORLD  0   /* 内核打印固定字符串 (lab-4 对齐 2025) */
+#define SYS_HELLOWORLD  0
 
 #define SYS_EXIT    1   /* 退出当前进程 */
 #define SYS_FORK    2   /* 创建子进程 */
@@ -13,6 +13,7 @@
 #define SYS_WRITE   4   /* 写文件/设备 */
 #define SYS_EXEC    5   /* 执行可执行文件 */
 #define SYS_WAIT    6   /* 等待子进程结束 */
+#define SYS_SLEEP   7   /* 睡 N 个 tick (lab-6) */
 #define SYS_BRK     8   /* 调整堆边界 (lab-5) */
 #define SYS_MMAP    9   /* 内存映射 (lab-5) */
 #define SYS_MUNMAP  14  /* 解除内存映射 (lab-5) */

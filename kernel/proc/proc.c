@@ -91,6 +91,8 @@ void proc_set_current(proc_t *p)
 {
 	cpu_proc[arch_cpu_id()] = p;
 }
+void sched_switch(void);
+
 void proc_sleep(void *chan, spinlock_t *lk)
 {
 }
@@ -99,18 +101,22 @@ void proc_wakeup(void *chan)
 {
 }
 
-/* 让出 CPU (抢占式调度入口); lab-6 之前没有调度器, 空操作。 */
-void proc_yield(void)
-{
-}
-
 spinlock_t *proc_wait_lock(void)
 {
 	return &wait_lock;
 }
 
+/* --------------------------------------------------------------------------
+ * 让出 CPU
+ * -------------------------------------------------------------------------- */
+void proc_yield(void)
+{
+	sched_switch();
+}
 
-// 让出 CPU
+/* --------------------------------------------------------------------------
+ * 进程退出
+ * -------------------------------------------------------------------------- */
 void proc_exit(int status)
 {
 }

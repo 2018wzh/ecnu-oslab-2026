@@ -8,6 +8,7 @@
 #include <kernel/mm.h>
 #include <kernel/arch.h>
 #include <kernel/proc.h>
+#include <kernel/irq.h>
 #include <kernel/timer.h>
 #include <platform.h>
 
@@ -17,44 +18,93 @@ void platform_init(void);
 /* 各模块初始化 */
 int  arch_cpu_id(void);
 void proc_init(void);
+void plic_init(void);
+void plic_init_hart(void);
+
+void sched_init_hart(void);
+
+// smp: 启动其他 hart (由启动协议提供: SBI HSM / 单核直启)
+void smp_start_others(void);
+
+static volatile int g_started = 0;
 
 int main(void)
 {
-        console_init();
-        print_init();
+        int cpuid = arch_cpu_id();
 
-        printf("\n");
-        printf("====================================\n");
-        printf("  ECNU OSLab 2026  (C)\n");
-        printf("  平台: %s\n", PLAT_NAME);
-        printf("====================================\n");
-        printf("\n");
+        if (arch_cpu_is_boot_hart()) {
+                console_init();
+                print_init();
 
-        platform_init();
+                printf("\n");
+                printf("====================================\n");
+                printf("  ECNU OSLab 2026  (C)\n");
+                printf("  平台: %s\n", PLAT_NAME);
+                printf("====================================\n");
+                printf("\n");
 
-        /* 物理内存分配器 (必须先于任何分配页面的操作) */
-        pmem_init();
+                platform_init();
 
-        /* 建立内核页表并打开分页 */
-        kvm_init();
-        kvm_init_hart();
-        printf("[main] 分页已开启, 当前运行在虚拟地址空间\n");
+                pmem_init();
+                kvm_init();
+                kvm_init_hart();
+                printf("[main] 分页已开启, 当前运行在虚拟地址空间\n");
 
-        /* 进程表: 为第一个用户进程准备槽位 */
-        proc_init();
+                /* 进程表 */
+                proc_init();
+
+                /* 为本 CPU 建立 idle 进程。
+                 * 必须先于任何 sched_switch —— 否则 myproc() 返回 NULL,
+                 * 而且"没有可运行进程"时无路可退。 */
+                sched_init_hart();
+
+                /* 中断控制器 (全局部分只需一次) */
+                plic_init();
 
 
-                // 为本 CPU 建 idle 进程并设为当前进程。必须先于任何 sched_switch,
-                // 否则 myproc() 返回 NULL。
+                // 块设备: 平台相关 (VirtIO 或 SD 卡)。lab-7 内容。
+                trap_arch_init();
+
+
+        // 每 hart 装自己的时钟中断 (参数是绝对时刻, 不是间隔)。
+        // tick 计数是全局的, 已由启动核 timer_create 建好。
+                timer_create();
+                timer_set_next(timer_interval());
+                /* 通知其他 hart 可以开始初始化了 */
+                __sync_synchronize();
+                g_started = 1;
+
+                /* 唤醒其他 hart (由启动协议实现: SBI HSM / 单核直启) */
+                smp_start_others();
+        } else {
+                // 等启动核建好页表与内存分配器, 过早进入会踩未初始化状态。
+                while (g_started == 0)
+                        ;
+                __sync_synchronize();
+
+                // 激活内核页表 (satp 是每 hart 自己的寄存器, 从核必须自己开)
+                kvm_init_hart();
+
+                sched_init_hart();
+                plic_init_hart();
+                printf("[cpu %d] 启动完成\n", cpuid);
+        }
+
+
         arch_irq_enable();
 
-        printf("[main] 准备进入用户态\n");
+        if (arch_cpu_is_boot_hart()) {
+                printf("[main] 准备进入用户态\n");
+                proc_make_first();   /* 不返回 */
+        }
 
-        /* 创建并进入第一个用户进程。它不会返回 ——
-         * 返回路径是把 CPU 交给 U-mode 的那段代码。 */
-        proc_make_first();
+        printf("[cpu %d] 进入调度循环\n", cpuid);
 
-        printf("[main] proc_make_first() 意外返回了\n");
-        for (;;)
-                ;
+        /* 主动让出 CPU, 让调度器有机会切到 idle 或别的进程。
+         * 之后每次时钟中断都会再次触发调度。 */
+        for (;;) {
+                printf("[cpu %d] 调度循环: 当前进程 %s, 让出 CPU\n",
+                       cpuid, myproc() ? myproc()->name : "?");
+                sched_switch();
+        }
 }
