@@ -27,6 +27,12 @@ void platform_init(void)
 	       (uint64)PLAT_UART0_CLOCK);
 }
 
+extern void _entry(void);
+uint64 platform_secondary_entry(void)
+{
+	return (uint64)_entry;
+}
+
 /* --------------------------------------------------------------------------
  * 映射本平台的设备 MMIO 区域
  *
@@ -50,5 +56,24 @@ int platform_map_devices(uint64 pgtbl)
 
 	printf("[platform] 已映射设备区 [0x%lx, 0x%lx) 与 SD 控制器 [0x%lx, +0x%lx)\n",
 	       a_begin, a_end, sd_begin, sd_size);
+	return 0;
+}
+
+/* --------------------------------------------------------------------------
+ * 把外部中断号分发给对应设备
+ *
+ * VisionFive2 上 UART 中断号是 32 (QEMU 是 10)。
+ * 这个差异只在这里体现, kernel/ 完全不知道。
+ * -------------------------------------------------------------------------- */
+void uart_intr(void);
+
+int platform_dispatch_irq(int irq)
+{
+	if (irq == PLAT_UART0_IRQ) {
+		uart_intr();
+		return 1;
+	}
+	/* SD 卡在本课程里用轮询模式驱动, 不使用中断 (见 platform.h 的
+	 * PLAT_SDIO0_IRQ 说明)。真实产品里会用中断来提高效率。 */
 	return 0;
 }

@@ -26,6 +26,7 @@ PLATFORM_INCLUDES := -I$(PLATFORM_DIR)
 # 以及第 4 个 (SD 卡) 为什么不能 —— 它换的是**设备协议**, 不是地址。
 PLATFORM_DRIVERS := \
 	drivers/serial/uart16550.c \
+	drivers/irqchip/plic.c \
 
 # ---- 运行配置 --------------------------------------------------------------
 # VisionFive2 通过 U-Boot 加载, 没有 QEMU 参数。

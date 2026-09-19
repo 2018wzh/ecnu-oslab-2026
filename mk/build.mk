@@ -33,6 +33,8 @@ KERNEL_CORE_CSRCS := \
 	kernel/mm/pmem.c \
 	kernel/mm/vm.c \
 	kernel/mm/kvmmap.c \
+	kernel/trap/trap.c \
+	kernel/trap/timer.c \
 
 # ---- 3. 汇总所有源文件 -----------------------------------------------------
 KERNEL_ALL_CSRCS := $(KERNEL_CORE_CSRCS) $(ARCH_CSRCS) $(PLATFORM_CSRCS) $(PLATFORM_DRIVERS) $(BOOT_CSRCS)

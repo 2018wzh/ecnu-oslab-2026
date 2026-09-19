@@ -26,6 +26,12 @@ void platform_init(void)
 	       (uint64)PLAT_UART0_BASE, PLAT_UART0_IRQ);
 }
 
+extern void _entry(void);
+uint64 platform_secondary_entry(void)
+{
+	return (uint64)_entry;
+}
+
 /* --------------------------------------------------------------------------
  * 映射本平台的设备 MMIO 区域
  *
@@ -50,5 +56,20 @@ int platform_map_devices(uint64 pgtbl)
 
 	printf("[platform] 已映射设备区 [0x%lx, 0x%lx) 与 VirtIO [0x%lx, 0x%lx)\n",
 	       a_begin, a_end, v_begin, v_end);
+	return 0;
+}
+
+/* --------------------------------------------------------------------------
+ * 把外部中断号分发给对应设备
+ * -------------------------------------------------------------------------- */
+void uart_intr(void);
+void virtio_disk_intr(void);
+
+int platform_dispatch_irq(int irq)
+{
+	if (irq == PLAT_UART0_IRQ) {
+		uart_intr();
+		return 1;
+	}
 	return 0;
 }

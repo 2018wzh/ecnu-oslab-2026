@@ -5,16 +5,18 @@
 
 #include <kernel/types.h>
 
-/* --------------------------------------------------------------------------
- * 板级初始化 (打印板级信息等)
- * -------------------------------------------------------------------------- */
+// 板级初始化 (打印板级信息等)。
 void platform_init(void);
 
-
 // 次核的启动入口地址 (供 smp 层通过 SBI HSM 启动其他 hart)。
-int platform_map_devices(uint64 pgtbl);
+uint64 platform_secondary_entry(void);
 
+// 把本平台 MMIO 区域映射到内核页表 pt: "有哪些设备、在哪"是机器相关的知识,
+// 由平台层处理; 调用时机在 kvm_init() 基础映射之后、开分页之前。返回 0 成功。
+int platform_map_devices(uint64 pgtbl);
 
 // 分发一个外部中断: 中断号->设备的对应关系机器相关, 由平台层决定。
 // 返回 1 表示已处理, 0 表示不认识这个中断号。
+int platform_dispatch_irq(int irq);
+
 #endif /* __KERNEL_PLATFORM_H__ */

@@ -56,4 +56,7 @@ void arch_wmb(void);
 // 指令缓存同步: 修改了将要执行的代码后必须调用, 否则 CPU 可能取到过期指令。
 void arch_icache_sync(void);
 
+// trap 向量: 安装 trap 向量。
+void trap_arch_init(void);
+
 #endif /* __KERNEL_ARCH_H__ */

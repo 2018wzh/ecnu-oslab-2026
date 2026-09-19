@@ -24,6 +24,7 @@ PLATFORM_INCLUDES := -I$(PLATFORM_DIR)
 # QEMU virt 提供 PLIC + CLINT + 16550 UART + VirtIO-MMIO 磁盘
 PLATFORM_DRIVERS := \
 	drivers/serial/uart16550.c \
+	drivers/irqchip/plic.c \
 
 # ---- 运行配置 ----------------------------------------------------
 QEMU_MACHINE := virt

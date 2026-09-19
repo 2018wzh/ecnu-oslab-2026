@@ -53,9 +53,11 @@ ARCH_CSRCS := \
 	arch/riscv64/trap/time.c \
 	arch/riscv64/mm/pgtable.c \
 	arch/riscv64/mm/mmu.c \
+	arch/riscv64/trap/trap.c \
 
 ARCH_SSRCS := \
 	arch/riscv64/trap/early.S \
+	arch/riscv64/trap/entry.S \
 
 # 入口汇编 (entry.S) 也归启动维度: 不同协议的进入状态不同
 # (S-mode 交接 / M-mode 直启), 见 mk/boot/<boot>.mk 的 BOOT_SSRCS。
