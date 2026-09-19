@@ -2,6 +2,7 @@
 // 本文件只做"翻译": 读 scause 判断中断还是异常, 再交给 generic 层的处理函数;
 // 具体"时钟中断要做什么"由 generic 决定, 换架构只改 scause 编码, generic 不动。
 #include <kernel/types.h>
+#include <kernel/proc.h>
 #include <kernel/print.h>
 #include <kernel/arch.h>
 #include <asm/csr.h>

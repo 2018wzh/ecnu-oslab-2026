@@ -14,6 +14,9 @@
 #     ARCH_ENTRY_SYMBOL       默认入口符号 (启动协议可以覆盖)
 #     ARCH_CFLAGS             -march/-mabi 这类编译选项
 #     ARCH_CSRCS / ARCH_SSRCS 本架构的源文件 (显式列出, 不要用 wildcard)
+#     USER_ARCH_DIR           用户程序侧架构目录 (syscall_arch.h 等)
+#     USER_LD_TEMPLATE        用户程序链接脚本模板
+#     USER_ENTRY / USER_BASE  用户程序的入口符号与链接基址
 #     QEMU_ARCH               给 qemu-system-<arch> 用的名字
 #     ELF_MACHINE / ELF_DATA  (在 arch/<arch>/include/asm/elf.h 里)
 #   再新建 arch/<arch>/{include,linker,boot,mm,trap,smp,process}/, 然后写一份
@@ -54,10 +57,13 @@ ARCH_CSRCS := \
 	arch/riscv64/mm/pgtable.c \
 	arch/riscv64/mm/mmu.c \
 	arch/riscv64/trap/trap.c \
+	arch/riscv64/process/context.c \
 
 ARCH_SSRCS := \
 	arch/riscv64/trap/early.S \
 	arch/riscv64/trap/entry.S \
+	arch/riscv64/trap/trampoline.S \
+	arch/riscv64/process/switch.S \
 
 # 入口汇编 (entry.S) 也归启动维度: 不同协议的进入状态不同
 # (S-mode 交接 / M-mode 直启), 见 mk/boot/<boot>.mk 的 BOOT_SSRCS。
@@ -104,6 +110,13 @@ ARCH_LDSCRIPT_TEMPLATE := arch/riscv64/linker/kernel.ld.in
 #      与早期控制台 / SMP / 定时器的实现 (BOOT_CSRCS)
 # 不需要改 mk/build.mk —— 它只认 `LDSCRIPT_TEMPLATE` 与 `LDSCRIPT_DEFS`。
 LDSCRIPT_TEMPLATE ?= $(ARCH_LDSCRIPT_TEMPLATE)
+
+# ---- 用户态 ----------------------------------------------------------------
+# 用户程序与内核是"同一个架构、不同特权级", 所以这些参数也属于架构层。
+USER_ARCH_DIR   := user/arch/riscv64
+USER_LD_TEMPLATE := user/arch/riscv64/user.ld.in
+USER_ENTRY      := main
+USER_BASE       := 0x1000
 
 # 入口符号 (ELF 的 e_entry): 默认是本架构的启动汇编入口 `_entry`。
 # 启动协议可以覆盖它 —— 例如裸机直启的真实入口是 M-mode 的 _entry_m,

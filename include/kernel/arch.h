@@ -59,4 +59,12 @@ void arch_icache_sync(void);
 // trap 向量: 安装 trap 向量。
 void trap_arch_init(void);
 
+// 内核上下文切换: 保存 old 寄存器、恢复 new 寄存器, 只涉及 callee-saved。
+// 返回时执行流已切到 new 上下文, 即该函数"返回两次"。
+void arch_context_switch(void *old_ctx, void *new_ctx);
+
+// 设置下次从用户态陷入时应使用的内核栈顶。
+// RISC-V 用 sscratch 原子换取, 是架构特有机制, 故抽象成接口。
+void arch_set_kernel_stack(uint64 kstack_top);
+
 #endif /* __KERNEL_ARCH_H__ */

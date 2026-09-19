@@ -113,5 +113,12 @@ LDFLAGS = -z max-page-size=4096
 LDFLAGS += --no-warn-rwx-segments
 
 
+# ---- 用户程序编译选项 ------------------------------------------------------
+# 用户程序跑在 U-mode, 有自己的 syscall ABI 头文件路径
+USER_CFLAGS = -Wall -O2 -ggdb -gdwarf-2 -ffreestanding -nostdlib
+USER_CFLAGS += -fno-common -fno-stack-protector -fno-pie -no-pie
+USER_CFLAGS += $(ARCH_CFLAGS)
+USER_CFLAGS += -Iuser -Iinclude -I$(USER_ARCH_DIR)
+
 # ---- 宿主工具选项 ----------------------------------------------------------
 HOSTCFLAGS := -Wall -Werror -O2 -Iinclude

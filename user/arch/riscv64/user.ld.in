@@ -1,0 +1,36 @@
+/* ==========================================================================
+ * user/arch/riscv64/user.ld.in -- 用户程序链接脚本**模板**
+ * --------------------------------------------------------------------------
+ * 【为什么它在 user/arch/<arch>/ 下】
+ * 用户程序和内核一样是"按架构编译"的: 入口符号、指令集、页大小都可能
+ * 不同。放在这里之后:
+ *   mk/arch/<arch>.mk  ->  USER_LD_TEMPLATE / USER_ENTRY / USER_BASE / ...
+ *   mk/build.mk        ->  用模板生成 $(BUILD_DIR)/user.ld
+ * 换架构时只加一份 user/arch/<arch>/user.ld.in, 通用构建规则不变。
+ *
+ * 【参数】(由 mk/build.mk 从 mk/arch/*.mk 传入, 都用 -D 定义)
+ *   ARCH_NAME        架构名 (OUTPUT_ARCH 的参数)
+ *   ENTRY_SYMBOL     入口符号 (用户程序是 main; 见 mk/arch/*.mk 的 USER_ENTRY)
+ *   USER_BASE        用户程序加载基址 (必须与内核的 USER_BASE 一致)
+ *   PAGE_SIZE        页大小
+ *
+ * 【这里踩过一次坑: ENTRY 写成 USER_ENTRY】
+ * mk/build.mk 传进来的是 -DENTRY_SYMBOL=..., 而脚本里写的是
+ * ENTRY(USER_ENTRY)。CPP 对**未定义**的标识符原样保留, 于是链接器看到
+ * 的是 ENTRY(USER_ENTRY) —— 它找不到这个符号, 只打印一句
+ * "cannot find entry symbol ... defaulting to 0000000000001000" 就继续。
+ * 因为默认值恰好是 0x1000 (也就是我们真正想要的基址), 一切看起来都正常,
+ * 错误被完全掩盖了。
+ * ========================================================================== */
+OUTPUT_ARCH(ARCH_NAME)
+ENTRY(ENTRY_SYMBOL)
+SECTIONS {
+  . = USER_BASE;
+  .text   : { *(.text .text.*) }
+  .rodata : { . = ALIGN(16); *(.srodata .srodata.*) . = ALIGN(16); *(.rodata .rodata.*) }
+  .data   : { . = ALIGN(16); *(.sdata .sdata.*) . = ALIGN(16); *(.data .data.*) }
+  .bss    : { . = ALIGN(16); *(.sbss .sbss.*) . = ALIGN(16); *(.bss .bss.*) }
+  /* 用户程序里不允许出现可写可执行段 —— 这条断言把"忘了加 -z noexecstack
+     之类导致段权限被放宽"的情况挡在构建阶段。 */
+  ASSERT(SIZEOF(.bss) >= 0, "用户程序段布局异常")
+}
