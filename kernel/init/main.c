@@ -7,6 +7,7 @@
 #include <kernel/print.h>
 #include <kernel/mm.h>
 #include <kernel/block.h>
+#include <kernel/fs.h>
 #include <kernel/arch.h>
 #include <kernel/proc.h>
 #include <kernel/irq.h>
@@ -82,7 +83,13 @@ int main(void)
                         }
                 }
 
-                /* trap 系统 */
+                fs_init();
+                if (fs_mounted())
+                        fs_list_root();
+
+
+                // 建立系统时钟的逻辑状态 (tick 计数), 全局的, 由启动核建一次。
+                // 注意它和"装时钟中断"是两件事: 后者是每 hart 自己的。
                 trap_arch_init();
 
 
