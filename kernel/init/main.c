@@ -6,9 +6,10 @@
 #include <kernel/types.h>
 #include <kernel/print.h>
 #include <kernel/arch.h>
+#include <kernel/mm.h>
 #include <platform.h>
 
-/* 板级信息打印 (platform/ 层实现) */
+/* 板级信息打印与设备映射 (platform/ 层实现) */
 void platform_init(void);
 
 int main(void)
@@ -18,6 +19,19 @@ int main(void)
 
         console_init();
         print_init();
+
+        printf("\n");
+        printf("====================================\n");
+        printf("  ECNU OSLab 2026  (C)\n");
+        printf("  LAB-2: 内存管理初步\n");
+        printf("====================================\n");
+        printf("\n");
+
+        platform_init();
+
+
+                // 物理内存分配器。必须先于任何需要分配页面的操作
+                // (页表创建、进程创建都依赖它)。
         for (;;)
                 ;
 }

@@ -4,6 +4,7 @@
 // platform_dispatch_irq()。换板子改本文件而不是改 kernel/ 任何文件 (可移植性核心)。
 #include <kernel/types.h>
 #include <kernel/print.h>
+#include <kernel/mm.h>
 #include <kernel/arch.h>
 #include <kernel/platform.h>
 #include <platform.h>
@@ -23,4 +24,31 @@ void platform_init(void)
 	printf("[platform] cpus  : %d (启动核 = %lu, 平台配置 = %d)  uart  : 0x%lx (irq %d)\n",
 	       PLAT_NCPU, (uint64)arch_cpu_cold_boot_hart(), PLAT_BOOT_HART,
 	       (uint64)PLAT_UART0_BASE, PLAT_UART0_IRQ);
+}
+
+/* --------------------------------------------------------------------------
+ * 映射本平台的设备 MMIO 区域
+ *
+ * QEMU virt 上需要映射两组:
+ *   1. PLIC 与 UART  (从 PLAT_PLIC_BASE 到 PLAT_UART0_BASE + 一页)
+ *   2. VirtIO MMIO   (8 个槽位, 每个一页)
+ * -------------------------------------------------------------------------- */
+int platform_map_devices(uint64 pgtbl)
+{
+	/* PLIC + UART 区域 */
+	uint64 a_begin = ALIGN_DOWN(PLAT_PLIC_BASE, PGSIZE);
+	uint64 a_end   = ALIGN_UP(PLAT_UART0_BASE + PGSIZE, PGSIZE);
+	if (kvm_map(pgtbl, a_begin, a_begin, a_end - a_begin, PERM_R | PERM_W) < 0)
+		return -1;
+
+	/* VirtIO MMIO 区域。PLAT_VIRTIO_COUNT 由本平台的头文件给出,
+	 * 所以这里不需要任何条件编译 —— 需要映射多少槽位是"本机器"的事实。 */
+	uint64 v_begin = ALIGN_DOWN(PLAT_VIRTIO0_BASE, PGSIZE);
+	uint64 v_end   = ALIGN_UP(PLAT_VIRTIO0_BASE + PLAT_VIRTIO_COUNT * PGSIZE, PGSIZE);
+	if (kvm_map(pgtbl, v_begin, v_begin, v_end - v_begin, PERM_R | PERM_W) < 0)
+		return -1;
+
+	printf("[platform] 已映射设备区 [0x%lx, 0x%lx) 与 VirtIO [0x%lx, 0x%lx)\n",
+	       a_begin, a_end, v_begin, v_end);
+	return 0;
 }

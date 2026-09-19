@@ -51,6 +51,8 @@ ARCH_CSRCS := \
 	arch/riscv64/smp/cpu.c \
 	arch/riscv64/smp/irq.c \
 	arch/riscv64/trap/time.c \
+	arch/riscv64/mm/pgtable.c \
+	arch/riscv64/mm/mmu.c \
 
 ARCH_SSRCS := \
 	arch/riscv64/trap/early.S \

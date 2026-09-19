@@ -30,6 +30,9 @@ KERNEL_CORE_CSRCS := \
 	kernel/lib/string.c \
 	kernel/sync/spinlock.c \
 	kernel/lib/console.c \
+	kernel/mm/pmem.c \
+	kernel/mm/vm.c \
+	kernel/mm/kvmmap.c \
 
 # ---- 3. 汇总所有源文件 -----------------------------------------------------
 KERNEL_ALL_CSRCS := $(KERNEL_CORE_CSRCS) $(ARCH_CSRCS) $(PLATFORM_CSRCS) $(PLATFORM_DRIVERS) $(BOOT_CSRCS)

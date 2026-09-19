@@ -40,4 +40,20 @@ uint64 arch_read_time(void);
 // 用于 UART 驱动初始化之前或分页刚开启之后, 不经过我们的页表; 仅启动早期使用。
 void arch_early_puts(const char *s);
 
+// 内存管理单元: 激活页表 (设为当前页表基址并刷新 TLB)。
+void arch_mmu_activate(uint64 root_ppn);
+
+// 刷新全部 TLB。
+void arch_tlb_flush_all(void);
+
+// 刷新单个虚拟地址的 TLB。
+void arch_tlb_flush_page(uint64 va);
+
+// 内存屏障。
+void arch_mb(void);
+void arch_wmb(void);
+
+// 指令缓存同步: 修改了将要执行的代码后必须调用, 否则 CPU 可能取到过期指令。
+void arch_icache_sync(void);
+
 #endif /* __KERNEL_ARCH_H__ */
