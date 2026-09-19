@@ -23,10 +23,12 @@ void user_enter(proc_t *p)
 	proc_set_current(p);
 	p->state = PROC_RUNNING;
 	p->cpuid = arch_cpu_id();
+	if (!p->ofile[STDOUT_FILENO]) {
+		if (fd_setup_stdio(p) < 0)
+			panic("user_enter: 无法为用户进程建立标准输入输出");
+	}
 
-
-	// 确保 stdin/stdout/stderr 就绪, 否则 write(1,..) 失败表现为"跑完了没输出"。
-	// 收在 user_enter 保证所有进入用户态的路径都设置过 fd (不变式尽量集中)。
+	/* 切换到该进程的页表 */
 	arch_mmu_activate(p->pgtbl);
 	uint64 kstack_top = p->kstack + KSTACK_SIZE;
 	arch_set_kernel_stack(kstack_top);

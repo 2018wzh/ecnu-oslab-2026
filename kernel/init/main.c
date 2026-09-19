@@ -8,6 +8,7 @@
 #include <kernel/mm.h>
 #include <kernel/block.h>
 #include <kernel/fs.h>
+#include <kernel/elf.h>
 #include <kernel/arch.h>
 #include <kernel/proc.h>
 #include <kernel/irq.h>
@@ -90,6 +91,28 @@ int main(void)
 
                 // 建立系统时钟的逻辑状态 (tick 计数), 全局的, 由启动核建一次。
                 // 注意它和"装时钟中断"是两件事: 后者是每 hart 自己的。
+                {
+                        static uint8 elfbuf[16];
+                        inode_t *ip = inode_by_path("/test_1");
+                        if (!ip) {
+                                printf("[main] 自检: 找不到 /test_1\n");
+                        } else {
+                                int n = inode_read(ip, (uint64)elfbuf, 0,
+                                                   sizeof(elfbuf), 0);
+                                inode_put(ip);
+                                if (n >= 4) {
+                                        printf("[main] 自检: /test_1 前 4 字节 = "
+                                               "%02x %02x %02x %02x "
+                                               "(ELF 魔数应为 7f 45 4c 46)\n",
+                                               elfbuf[0], elfbuf[1],
+                                               elfbuf[2], elfbuf[3]);
+                                } else {
+                                        printf("[main] 自检: 读 /test_1 失败\n");
+                                }
+                        }
+                }
+
+                /* trap 系统 */
                 trap_arch_init();
 
 

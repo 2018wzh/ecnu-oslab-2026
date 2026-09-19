@@ -42,6 +42,7 @@ KERNEL_CORE_CSRCS := \
 	kernel/proc/exec.c \
 	kernel/syscall/syscall.c \
 	kernel/syscall/sysfunc.c \
+	kernel/fs/file.c \
 	kernel/mm/uvm.c \
 	kernel/sched/sched.c \
 	kernel/sync/sleeplock.c \
@@ -52,6 +53,7 @@ KERNEL_CORE_CSRCS := \
 	kernel/fs/dentry.c \
 	kernel/fs/device.c \
 	kernel/fs/fs.c \
+	kernel/proc/elf.c \
 
 # ---- 3. 汇总所有源文件 -----------------------------------------------------
 KERNEL_ALL_CSRCS := $(KERNEL_CORE_CSRCS) $(ARCH_CSRCS) $(PLATFORM_CSRCS) $(PLATFORM_DRIVERS) $(BOOT_CSRCS)

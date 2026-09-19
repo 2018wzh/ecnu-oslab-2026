@@ -6,12 +6,8 @@
 #include <kernel/proc.h>
 #include <kernel/print.h>
 #include <kernel/string.h>
+#include <kernel/elf.h>
 #include <kernel/arch_mm.h>
-
-/* initcode 二进制数组 (由 mk/build.mk 用 xxd 生成, 见 initcode_blob.c)。
- * xxd -i 把数组名设成输入文件名, 所以生成的就是 initcode / initcode_len。 */
-extern unsigned char initcode[];
-extern unsigned int  initcode_len;
 
 void proc_make_first(void)
 {

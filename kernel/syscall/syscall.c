@@ -27,13 +27,22 @@ void   trapframe_set_reg(trapframe_t *tf, int idx, uint64 v);
  * 这是分析报告强调的"单一事实来源": 不要分别手写内核分发表和用户封装。 */
 #include <uapi/syscall.h>
 
-/* 各系统调用的实现 (lab-9 完善) */
-extern int64 sys_helloworld(void);
+
+// 各系统调用的实现 (lab-9 完善)
 extern int64 sys_write(int fd, uint64 buf, uint64 n);
 extern int64 sys_getpid(void);
 extern int64 sys_open(uint64 path, uint64 flags, uint64 mode);
 extern int64 sys_close(int fd);
 extern int64 sys_lseek(int fd, uint64 offset, uint64 whence);
+extern int64 sys_dup(int fd);
+extern int64 sys_fstat(int fd);
+extern int64 sys_get_dentries(int fd);
+extern int64 sys_mkdir(uint64 path_user);
+extern int64 sys_chdir(uint64 path_user);
+extern int64 sys_print_cwd(void);
+extern int64 sys_link(uint64 old_path_user, uint64 new_path_user);
+extern int64 sys_unlink(uint64 path_user);
+
 extern int64 sys_read(int fd, uint64 buf, uint64 n);
 extern int64 sys_exit(int status);
 extern int64 sys_fork(void);

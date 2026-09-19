@@ -67,4 +67,7 @@ void arch_context_switch(void *old_ctx, void *new_ctx);
 // RISC-V 用 sscratch 原子换取, 是架构特有机制, 故抽象成接口。
 void arch_set_kernel_stack(uint64 kstack_top);
 
+// ELF: 本架构的 e_machine, 由 ELF 加载器校验可执行文件是否为本架构编译。
+#include <asm/elf.h>
+
 #endif /* __KERNEL_ARCH_H__ */

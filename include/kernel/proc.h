@@ -47,6 +47,9 @@ typedef struct proc {
 
 /* 进程管理接口 (generic kernel): struct proc 里的 ctx 字段类型是 context_t,
  * 进程逻辑 generic, 上下文布局交给 arch 层定义, 换架构不必改 struct proc。 */
+	struct file *ofile[NOFILE];
+
+	/* ---- 待 lab-6/9 使用 ---- */
 	uint64 chan;                /* 睡眠等待的通道 (类似 xv6 的做法) */
 	int killed;                 /* 是否被要求退出 */
 	uint64 exit_status;         /* 退出码, 供父进程读取 */

@@ -4,9 +4,9 @@
 #ifndef __UAPI_SYSCALL_H__
 #define __UAPI_SYSCALL_H__
 
-/* 系统调用号: 从 1 开始 (0 保留为"非法") */
-#define SYS_HELLOWORLD  0
 
+// 系统调用号: 从 1 开始 (0 保留为"非法")。
+// lab-4: SYS_HELLOWORLD 让内核打印固定字符串, 不经过 fd 表 (那些到 lab-9)。
 #define SYS_EXIT    1   /* 退出当前进程 */
 #define SYS_FORK    2   /* 创建子进程 */
 #define SYS_READ    3   /* 读文件/设备 */
@@ -22,11 +22,19 @@
 #define SYS_CLOSE   12  /* lab-9: 关闭文件 */
 #define SYS_LSEEK   13  /* lab-9: 移动读写位置 */
 
-#define SYS_MAX     15
+/* 25 lab-9 补齐 (目录/链接/元数据) */
+#define SYS_DUP        16  /* 复制文件描述符 */
+#define SYS_FSTAT      17  /* 取文件状态 */
+#define SYS_GETDENTS   18  /* 列出目录项 */
+#define SYS_MKDIR      19  /* 创建目录 */
+#define SYS_CHDIR      20  /* 切换工作目录 */
+#define SYS_PRINT_CWD  21  /* 打印当前工作目录 */
+#define SYS_LINK       22  /* 建立硬链接 */
+#define SYS_UNLINK     23  /* 解除硬链接 */
 
-/* 系统调用号 (用户态接口, UAPI): 被内核与用户程序共同包含,
- * 构成用户态可见契约 (调用号/参数约定/错误码), 不得含内核私有结构。
- * 用户程序 syscall 封装包含本文件, 保证调用号单一事实来源。 */
+#define SYS_MAX     24
+
+/* 标准文件描述符 */
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
