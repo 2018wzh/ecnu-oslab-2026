@@ -1,0 +1,152 @@
+/* ==========================================================================
+ * arch/riscv64/linker/kernel.ld.in -- 内核链接脚本**模板**
+ * --------------------------------------------------------------------------
+ * 这个脚本回答一个非常具体的问题: "内核的各个段应该被放在内存的什么位置?"
+ *
+ * 【它是一个模板, 由构建系统预处理成真正的 .ld】
+ * 脚本里**没有任何写死的架构名、地址或页大小** —— 那些全部是参数:
+ *
+ *   ARCH_NAME     架构名        (OUTPUT_ARCH 需要, 如 "riscv")
+ *   ENTRY_SYMBOL  入口符号      (通常是 _entry)
+ *   KERNEL_BASE   加载/链接基址 (来自 configs/*.mk 的 KERNEL_LOAD_ADDR)
+ *   PAGE_SIZE     页大小        (来自 mk/arch/*.mk)
+ *
+ * 生成方式见 mk/build.mk: `$(CPP) -P -D... -o $(BUILD_DIR)/kernel.ld`.
+ * 参数由三个维度各自提供自己那部分: arch 给架构名与页大小, config 给
+ * 基址, boot 可以再追加**启动协议自己需要的段** (见下面 BOOT_LD_INCLUDE).
+ *
+ * 【为什么用模板而不是"每个协议一份完整脚本"】
+ * 因为多份脚本会各自漂移: 改个段顺序要改 N 份。模板让"段布局"只有一份
+ * 事实, 而协议差异被压缩成几个宏定义。
+ *
+ * 【换一个启动协议要做什么 (以 multiboot2 为例)】
+ *   1. 写 mk/boot/multiboot2.mk, 里面:
+ *        BOOT_LD_DEFS  := -DBOOT_MULTIBOOT2=1
+ *        BOOT_SSRCS    := <该协议的入口汇编>
+ *        BOOT_CSRCS    := <该协议的早期控制台等>
+ *   2. 需要额外段就写一个片段文件, 用 -DBOOT_LD_INCLUDE='"path"' 引进来;
+ *   3. 在 configs/ 里加一个 BOOT=multiboot2 的配置档案。
+ * kernel/ 与 mk/build.mk **一行都不用改** —— 这也是判断边界划得对不对
+ * 的标准: 换 bootloader 要改 kernel/, 说明抽象漏了。
+ * ========================================================================== */
+
+OUTPUT_ARCH(ARCH_NAME)
+ENTRY(ENTRY_SYMBOL)
+
+SECTIONS
+{
+  /* 基地址由构建系统注入 (见文件头) —— 这里不写任何默认地址:
+     写死的默认值会在"忘了传参数"时静默地把内核链接到错误的地方。 */
+  . = KERNEL_BASE;
+
+  /* 链接结果的自我校验: 入口符号必须正好落在基地址上。
+     这条断言替代了以前 mk/build.mk 里那段用 objdump 比较地址的 shell
+     代码 —— 同样的保证, 但写在一个地方 (链接脚本), 而且失败时链接器
+     会直接报出原因。 */
+  ASSERT(ADDR(.text) == KERNEL_BASE, "错误: .text 不在 KERNEL_BASE 上")
+
+  /* 镜像**实际**起始地址, 供 C 代码使用 (kvm_init 要映射 [镜像起点, ALLOC_BEGIN))。
+   *
+   * 【为什么用符号而不是平台常量】
+   * "内核被放在哪"是**链接结果**, 不是平台属性: 有固件时内核在固件之后
+   * (QEMU 0x80200000), 裸机直启时就在 DRAM 起点 (0x80000000)。以前
+   * kvm_init 用的是 platform.h 的 PLAT_KERNEL_BASE —— 在裸机直启配置下
+   * 那个值比实际地址**大**, 于是 `alloc_begin - kernel_start` 变成负数,
+   * 映射长度成了一个天文数字 (现象是启动卡死在建页表里)。
+   * 用链接器符号之后, 映射范围永远与实际布局一致。 */
+  PROVIDE(_image_start = ADDR(.text));
+
+  /* ---------- 代码段 ---------- */
+  .text : {
+    /* 保证入口点在最前面, 这样即使加载器从段首开始执行也没问题 */
+    *(.text.entry)
+    *(.text .text.*)
+
+    . = ALIGN(PAGE_SIZE);
+
+    /* trampoline: 用户态 <-> 内核态切换时使用的代码。
+       它必须独立占一页, 因为内核页表和用户页表都会映射它,
+       且两份映射的虚拟地址相同 (这样切换页表时 PC 不会失效)。
+       链接器断言保证它不超过一页 —— 如果超了, 编译期就会报错,
+       而不是等到运行时莫名其妙地崩掉。 */
+    _trampoline = .;
+    *(trampsec)
+    . = ALIGN(PAGE_SIZE);
+
+    /* 【为什么断言要加 DEFINED 判断】
+     * trampoline 是 lab-4 引入的 (用户态 <-> 内核态切换时的公共代码页)。
+     * 在 lab-1..lab-3 阶段, trampoline.S 还没被加入构建, trampsec 段
+     * 是空的, 于是"必须正好占一页"的断言会失败。
+     *
+     * 用 DEFINED(trampoline) 判断符号是否存在:
+     *   - 存在 (lab-4+)      -> 必须严格占一页, 否则切换页表时 PC 会失效
+     *   - 不存在 (lab-1..3)  -> 跳过检查
+     * 这样同一个链接脚本能服务所有 lab 阶段。 */
+    ASSERT(!DEFINED(trampoline) || . - _trampoline == PAGE_SIZE,
+           "错误: trampoline 代码超过一页, 请精简 arch/riscv64/trap/trampoline.S");
+
+    PROVIDE(KERNEL_DATA = .);
+  }
+
+  /* ---------- 只读数据 ---------- */
+  .rodata : {
+    . = ALIGN(16);
+    *(.srodata .srodata.*)
+    . = ALIGN(16);
+    *(.rodata .rodata.*)
+  }
+
+  /* ---------- 已初始化数据 ---------- */
+  .data : {
+    . = ALIGN(16);
+    *(.sdata .sdata.*)
+    . = ALIGN(16);
+    *(.data .data.*)
+  }
+
+  /* ---------- 未初始化数据 ----------
+   *
+   * __bss_start / __bss_end 供启动汇编清 .bss 用。
+   *
+   * 【为什么内核必须自己清 .bss】
+   * QEMU 通过 -kernel 加载 ELF 时, 加载器会把 PT_LOAD 段里
+   * memsz > filesz 的部分清零, 所以 .bss 恰好是干净的。
+   * 但 VisionFive2 走的是 U-Boot 的 bootm: 它搬运的是 objcopy 出来的
+   * **裸二进制**, 而 objcopy 默认不包含 .bss (它没有文件内容) ——
+   * 于是 .bss 里是内存里原有的垃圾。不清零的现象是"全局变量的初值
+   * 不是 0", 而它取决于上一份被加载到这块内存的东西是什么, 极难复现。
+   */
+  .bss : {
+    . = ALIGN(16);
+    __bss_start = .;
+    *(.sbss .sbss.*)
+    . = ALIGN(16);
+    *(.bss .bss.*)
+    *(COMMON)
+    . = ALIGN(16);
+    __bss_end = .;
+  }
+
+  /* ---------- 物理内存分配器的起点 ---------- */
+  /* ALLOC_BEGIN 之后的内存才允许被物理页分配器管理。
+     这个符号被 kernel/mm/pmem.c 使用。 */
+  . = ALIGN(PAGE_SIZE);
+  PROVIDE(ALLOC_BEGIN = .);
+
+  /* 内核镜像结束标记, 便于计算内核实际大小 */
+  PROVIDE(KERNEL_END = .);
+
+  /* ---------- 启动协议自带的段 ----------
+   * 由 mk/boot/<boot>.mk 通过 -DBOOT_LD_INCLUDE='"<片段>"' 提供。
+   * 例: multiboot2 的头必须落在文件前 32 KiB 内且 8 字节对齐 ——
+   * 那种"位置有硬性要求"的段就写在这个片段里, 通用模板不必知道它。 */
+#ifdef BOOT_LD_INCLUDE
+#include BOOT_LD_INCLUDE
+#endif
+
+  /* 丢弃不需要的段, 避免它们占用镜像空间 */
+  /DISCARD/ : {
+    *(.eh_frame)
+    *(.comment)
+  }
+}

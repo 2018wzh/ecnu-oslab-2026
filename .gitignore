@@ -1,0 +1,9 @@
+build/
+.gdbinit
+*.o
+*.d
+*.elf
+*.bin
+*.itb
+*.img
+__pycache__/
