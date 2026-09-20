@@ -3,4 +3,7 @@
 #include <uapi/syscall.h>
 long syscall6(long number, long x0, long x1, long x2, long x3, long x4, long x5);
 long hello(void);
+long brk(unsigned long top);
+long mmap(unsigned long address, unsigned long len);
+long munmap(unsigned long address, unsigned long len);
 #endif

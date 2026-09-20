@@ -23,10 +23,11 @@ typedef struct proc {
     int pid;
     proc_state_t state;
     pgtbl_t pgtbl;        /* 用户页表根的物理地址，内核恒等映射可访问。 */
-    uint64 heap_top;      /* 字节单位；初值 0x2000，伸缩留给 lab-5。 */
+    uint64 heap_top;      /* 字节单位；初值 0x2000，按页伸缩。 */
     uint64 ustack_npage;  /* 用户栈页数，初值 1。 */
     user_frame_t *frame;  /* 内核通过物理恒等映射访问独占 frame 页。 */
     uint64 kstack;        /* 高地址虚拟栈底，不是可直接回收的物理地址。 */
+    struct mmap_region *mmap; /* 已分配区域链，首进程初始化为空。 */
     context_t context;
 } proc_t;
 extern proc_t proczero;
