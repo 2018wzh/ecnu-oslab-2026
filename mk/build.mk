@@ -15,6 +15,8 @@ $(BUILD)/arch/riscv64/user_image.o: $(BUILD)/user/init.bin
 KERNEL_C += kernel/mem/uvm.c kernel/mem/mmap.c kernel/syscall/syscall.c kernel/syscall/sysfunc.c kernel/syscall/memory.c
 KERNEL_C += kernel/proc/lifecycle.c kernel/proc/schedule.c kernel/lock/sleeplock.c kernel/syscall/process.c
 KERNEL_C += drivers/block/virtio_blk.c drivers/block/sd.c kernel/fs/block.c kernel/fs/buffer.c kernel/fs/bitmap.c kernel/fs/fs.c kernel/syscall/disk.c
+KERNEL_C += kernel/fs/inode.c kernel/fs/dentry.c kernel/fs/lab8_examples.c
+CPPFLAGS += -DLAB8_TEST=$(or $(LAB8_TEST),0)
 SOURCES := $(KERNEL_C) $(ARCH_C) $(PLATFORM_C)
 OBJECTS := $(addprefix $(BUILD)/,$(SOURCES:.c=.o) $(ARCH_S:.S=.o))
 -include $(OBJECTS:.o=.d)
@@ -34,3 +36,7 @@ $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $< $@
 .PHONY: build
 build: $(BUILD)/kernel.elf
+
+# 例程选择是编译参数；切换 LAB8_TEST 后必须重新编译此对象。
+.PHONY: lab8-example-config
+$(BUILD)/kernel/fs/lab8_examples.o: lab8-example-config

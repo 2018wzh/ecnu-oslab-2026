@@ -1,3 +1,4 @@
+#include <kernel/inode.h>
 #include <kernel/fs.h>
 #include <kernel/print.h>
 superblock_t superblock;
@@ -13,4 +14,8 @@ void sb_print(const superblock_t *sb)
 }
 // TODO(lab-7): 在首进程上下文初始化 buffer 并读块 0；按 LE 解码、验证布局后打印。
 // 不能在调度器启动前执行可能睡眠的磁盘 I/O。
-void fs_init(void) { panic("TODO(lab-7): fs_init"); }
+void fs_init(void) {
+    panic("TODO(lab-7): fs_init");
+    /* TODO(lab-8): 完成前序初始化后，在合适位置调用 inode_init。 */
+    lab8_examples(); /* 末尾；仅可睡眠的首进程上下文，默认关闭。 */
+}

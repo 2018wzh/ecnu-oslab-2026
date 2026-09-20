@@ -24,3 +24,7 @@ int strncmp(const char *a, const char *b, size_t len)
     }
     return 0;
 }
+
+/* 教师提供的本章辅助，不替代目录或路径任务。 */
+int strlen(const char *str)
+{ int i = 0; while (str[i] != '\0') ++i; return i; }

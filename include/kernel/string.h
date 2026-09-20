@@ -9,4 +9,6 @@ void *memcpy(void *dst, const void *src, size_t len);
 void *memmove(void *dst, const void *src, size_t len);
 /* 最多比较 len 字节，遇 NUL 停止；按无符号字节返回负/零/正。 */
 int strncmp(const char *a, const char *b, size_t len);
+/* 教师辅助：返回以 NUL 结尾的字符串长度。 */
+int strlen(const char *str);
 #endif
