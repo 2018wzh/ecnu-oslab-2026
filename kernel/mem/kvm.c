@@ -24,7 +24,7 @@ void vm_mappages(pgtbl_t root, uint64 va, uint64 pa, uint64 len, uint64 perm)
 void vm_unmappages(pgtbl_t root, uint64 va, uint64 len, bool free_pages)
 { (void)root; (void)va; (void)len; (void)free_pages; panic("TODO(lab-2): vm_unmappages"); }
 // TODO(lab-2): 映射内核代码 RX、只读区 R、数据与可分配区 RW、UART 和 PLIC RW。
-// 不设置 U，不映射固件保留区；CLINT 由固件管理，本章不实现中断驱动。
+// 不设置 U，不映射固件保留区；CLINT 由固件管理，PLIC 映射沿用 lab-2，中断驱动由 trap 模块使用。
 void kvm_init(void) { panic("TODO(lab-2): kvm_init"); }
 void kvm_inithart(void)
 {

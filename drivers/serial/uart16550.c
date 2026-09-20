@@ -21,3 +21,9 @@ void uart_putc(uint64 base, unsigned shift, uint8 c)
     while ((*(volatile uint8 *)(base + (5UL << shift)) & 0x20) == 0) {}
     write_reg(base, shift, 0, c);
 }
+int uart_getc(uint64 base, unsigned shift)
+{
+    if ((*(volatile uint8 *)(base + (5UL << shift)) & 1) == 0) return -1;
+    return *(volatile uint8 *)base;
+}
+void uart_enable_rx(uint64 base, unsigned shift) { write_reg(base, shift, 1, 1); }
