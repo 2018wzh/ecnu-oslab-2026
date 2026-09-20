@@ -5,7 +5,9 @@ ENTRY(_entry)
 SECTIONS {
     . = LOAD;
     .text : { KEEP(*(.text.entry)) *(.text .text.*) }
+    . = ALIGN(4096); text_end = .;
     .rodata : ALIGN(4096) { *(.rodata .rodata.*) }
+    . = ALIGN(4096); rodata_end = .;
     .data : ALIGN(4096) { PROVIDE(__global_pointer$ = . + 0x800); *(.sdata .sdata.* .data .data.*) }
     . = ALIGN(8);
     __bss_start = .;
