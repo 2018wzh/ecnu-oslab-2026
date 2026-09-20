@@ -13,4 +13,6 @@ void arch_early_init(void);
 void arch_park(void) __attribute__((noreturn));
 void push_off(void);
 void pop_off(void);
+uint64 arch_kernel_satp(void);
+void arch_user_return(uint64 user_satp, uint64 pc) __attribute__((noreturn));
 #endif

@@ -5,6 +5,8 @@ ENTRY(_entry)
 SECTIONS {
     . = LOAD;
     .text : { KEEP(*(.text.entry)) *(.text .text.*) }
+    .trampoline : ALIGN(4096) { KEEP(*(.trampoline)) }
+    ASSERT(SIZEOF(.trampoline) <= 4096, "trampoline exceeds page")
     . = ALIGN(4096); text_end = .;
     .rodata : ALIGN(4096) { *(.rodata .rodata.*) }
     . = ALIGN(4096); rodata_end = .;

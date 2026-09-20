@@ -2,7 +2,7 @@
 #define OSLAB_TRAP_H
 #include <kernel/types.h>
 /* 与 trap_entry.S 共用 272 字节布局；入口栈保持 16 字节对齐。
- * 本章仅处理内核态整数上下文，不保存浮点/向量状态。
+ * 内核与用户陷阱共用整数寄存器布局，不保存浮点/向量状态。
  */
 typedef struct {
     uint64 x[32]; /* x[n] 位于 n*8；x[0]=0，x[2] 记录陷入前的 sp。 */

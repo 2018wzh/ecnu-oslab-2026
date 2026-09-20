@@ -2,6 +2,16 @@ KERNEL_C := kernel/main.c kernel/lib/console.c kernel/lib/print.c kernel/lock/sp
 KERNEL_C += kernel/lib/string.c kernel/mem/pmem.c kernel/mem/kvm.c
 KERNEL_C += kernel/trap/trap.c kernel/trap/timer.c drivers/irqchip/plic.c
 ARCH_S += arch/riscv64/trap_entry.S
+KERNEL_C += kernel/proc/proc.c kernel/trap/user.c
+ARCH_S += arch/riscv64/trampoline.S arch/riscv64/user_image.S
+ARCH_S += arch/riscv64/switch.S
+CPPFLAGS += -DUSER_IMAGE='"$(BUILD)/user/init.bin"'
+$(BUILD)/user/init.elf: user/init.c user/syscall.c user/arch/$(ARCH)/entry.S user/sys.h user/arch/$(ARCH)/syscall_arch.h user/arch/$(ARCH)/user.ld include/uapi/syscall.h
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -Iuser/arch/$(ARCH) $(CFLAGS) -nostdlib -static -Wl,--no-relax,-T,user/arch/$(ARCH)/user.ld user/init.c user/syscall.c user/arch/$(ARCH)/entry.S -o $@
+$(BUILD)/user/init.bin: $(BUILD)/user/init.elf
+	$(OBJCOPY) -O binary $< $@
+$(BUILD)/arch/riscv64/user_image.o: $(BUILD)/user/init.bin
 SOURCES := $(KERNEL_C) $(ARCH_C) $(PLATFORM_C)
 OBJECTS := $(addprefix $(BUILD)/,$(SOURCES:.c=.o) $(ARCH_S:.S=.o))
 -include $(OBJECTS:.o=.d)

@@ -1,39 +1,54 @@
-# LAB-3: 中断异常初步
+# LAB-4: 第一个用户进程的诞生
 
 **前言**
 
-前两个实验其实留了两个坑没有填:
+LAB-1到LAB-3属于第一阶段: **基础设施建设**
 
-- lab-1中实现了UART的输入输出函数, 但是printf只用到输出函数, 输入函数没有发挥作用
+从LAB-4开始, OS内核的构建进入第二阶段: **用户进程管理**
 
-- lab-2中内核页表映射了PLIC设备, 还没有使用过它的能力
+到目前为止, OS内核只是一个能够掌控硬件的高权限(S-mode)程序
 
-在本次实验, 我们会填上这两个小坑——为OS内核引入初级的“中断+异常”的识别和处理能力
+然而, 内核最核心的作用其实是为低权限的用户进程提供安全、共享、便捷的系统服务
+
+引入进程模块并不是一件简单的事情, 你是否也感到无从下手呢?
+
+按照"从简单到复杂"的基本原则, 我们先来研究"第一个用户进程是怎么一步步诞生的"
+
+本次实验的**核心目标**: 用户进程向内核发出一个syscall, 内核收到后输出`proczero: hello world!\n`进行响应
 
 ## 代码组织结构
+
 ```
 ECNU-OSLAB-2026
 ├── pictures       README使用的图片目录 (CHANGE, 日常更新)
 ├── README.md      实验指导书 (CHANGE, 日常更新)
 ├── arch/riscv64
-│   └── trap_entry.S (NEW, 很重要, 请完全理解这部分)
-├── drivers
-│   ├── irqchip
-│   │   ├── plic.c (NEW, 请阅读和理解这部分)
-│   │   └── plic.h (NEW)
-│   └── serial
-│       └── uart16550.c (CHANGE, 接收中断)
-├── include/kernel
-│   └── trap.h (NEW, 陷阱现场与接口)
-├── platform
-│   ├── qemu-virt/platform.h (CHANGE, 中断与时钟参数)
-│   └── visionfive2/platform.h (CHANGE, 中断与时钟参数)
-└── kernel
-    ├── trap
-    │   ├── timer.c (TODO, 时钟中断和计时器相关操作)
-    │   └── trap.c (TODO, 内核态trap处理与串口回显)
-    └── main.c (TODO, 更多的初始化)
+│   ├── linker/kernel.lds.S (CHANGE, 支持trampoline)
+│   ├── switch.S (NEW, 上下文切换)
+│   ├── trampoline.S (NEW, 用户态进入与返回)
+│   ├── syscall.c (TODO, 返回用户态前的准备)
+│   └── user_image.S (NEW, 嵌入用户镜像)
+├── include
+│   ├── kernel
+│   │   ├── proc.h (NEW, 进程结构与接口)
+│   │   ├── context.h (NEW)
+│   │   └── syscall.h (NEW)
+│   └── uapi/syscall.h (NEW, 系统调用号)
+├── kernel
+│   ├── mem/kvm.c (TODO, 增加trampoline与KSTACK(0)映射)
+│   ├── trap/user.c (TODO, 用户态陷阱处理)
+│   ├── proc/proc.c (TODO, 进程管理核心逻辑)
+│   └── main.c (TODO, 创建第一个用户进程)
+└── user
+    ├── init.c (NEW)
+    ├── sys.h (NEW)
+    ├── syscall.c (NEW)
+    └── arch/riscv64
+        ├── entry.S (NEW)
+        ├── syscall_arch.h (NEW)
+        └── user.ld (NEW, 用户程序布局)
 ```
+
 **标记说明**
 
 **NEW**: 新增源文件, 直接拷贝即可, 无需修改
@@ -42,218 +57,259 @@ ECNU-OSLAB-2026
 
 **TODO**: 你需要实现新功能 / 你需要完善旧功能
 
-## 初步认识中断和异常
+## 进程的定义和地址空间布局
 
-中断、异常、陷入等概念在不同体系结构下(ARM, x86, MIPS...)定义有一些区别, 这里只讨论RISC-V的定义
+### 用户进程诞生之前
 
-RISC-V用陷阱(trap)的概念统筹二者: 陷阱可以分为中断(interrupt)和异常(exception)两种类型
+进程指的是一个具备运行状态的程序(在Linux环境下通常以ELF文件存储)
 
-**共同点:**
+也就是说进程由静态的可执行文件 + 动态的执行状态构成 (寄存器上下文、内存占用等)
 
-- 中断和异常都是对正常执行流的一种打断, OS内核临时处理一个紧急的事情, 随后返回原来的执行流
+在某种意义上, OS内核本身也可以视为一种进程 (它符合进程的定义, 虽然一般不叫它进程)
 
-- 中断和异常都涉及特权级的陷入和返回, 例如U-mode陷入S-mode再返回U-mode (也可以是同级的)
+用户进程诞生之前, OS内核基于启动时使用的函数栈`boot_stacks`+**kernel/mem/kvm.c**中定义的`kernel_pgtbl`运行
 
-**不同点:**
+它的主逻辑位于**kernel/main.c**, 进行了一系列系统资源初始化, 随后执行等待循环, 期间穿插trap的中断异常处理过程
 
-- 中断是异步事件, 中断处理完成后, 保持sepc不变, 返回被打断的执行流
+这就是用户进程诞生之前OS内核的状态
 
-- 异常是由指令同步触发的, sepc记录引发异常的指令地址。修复缺页后可以重新执行该指令, 处理ecall后则需要跳过该指令
+### 用户进程的定义
 
-**从程序的角度来看:**
+这启发我们, 用户进程也至少要有**用户栈 + 用户页表**来支持它的运行
 
-- 遇到**中断**往往是意料之内的事, 甚至是期待发生的事 (需要串口中断读取字符, 需要时钟中断指导调度)
+除此之外, 用户进程还需要记录哪些信息呢?
 
-- 遇到**异常**往往是因为代码本身有问题 (除了ecall和page fault这两种可控的情况)
+- 用于动态分配内存的空间——**用户堆**
 
-**具体来说, RISC-V定义了以下中断和异常类型:**
+- 用户进程陷入内核后, 需要有临时的函数执行空间——**内核栈**
 
-- RISC-V中断包括时钟中断、软件中断和外设中断, 内核在S-mode处理时钟中断和外设中断
+- 用户进程陷入内核时, 必须保存用户执行流的上下文——**trapframe**
 
-- RISC-V定义了十几种异常类型 (包括内存读取带来的越界, 内存写入带来的越界, 非法指令, ecall等)
+- 用户进程在内核中发生切换, 必须保存内核执行流的上下文——**context**
+
+- 用户进程应该有一个自己的代号——**pid**
+
+```c
+// 进程
+typedef struct proc
+{
+    int pid; // 标识符
+    proc_state_t state; // 运行状态
+
+    pgtbl_t pgtbl;       // 用户态页表
+    uint64 heap_top;     // 用户堆顶(以字节为单位)
+    uint64 ustack_npage; // 用户栈占用的页面数量
+    user_frame_t *frame;     // 用户态内核态切换时的运行环境暂存空间
+
+    uint64 kstack;       // 内核栈的虚拟地址
+    context_t context;       // 内核态进程上下文
+} proc_t;
+```
+
+### 用户进程的地址空间
 
 ![pic](./pictures/01.png)
 
-**关于CLINT和PLIC:**
+图片示意了用户页表定义的用户进程地址空间 + 内核页表定义的内核程序地址空间
 
-- CLINT (core-local interruptor) 提供各CPU的**时钟中断和软件中断**机制, 本实验由OpenSBI管理
+图中的堆和栈箭头表示后续增长方向, 本章只分配一页用户栈, 暂不分配堆页。两平台的内存和设备地址仍按平台配置确定
 
-- PLIC (platform-level interrupt controller) 是所有CPU共享的机制, 负责接收**外设中断**
+为了让用户程序顺利陷入内核执行, 内核页表在初始化时需要多映射以下两个部分
 
-本次实验我们主要实现串口中断(一种外设中断)和时钟中断
+- **trampoline**: 定义在**arch/riscv64/trampoline.S**, 包含U-mode进入S-mode和返回的代码逻辑, 在两张页表中映射到相同的虚拟地址和物理页
 
-## 串口中断
+- **kstack**: 宏`KSTACK(procid)` 定义了各个进程的内核栈地址空间, 目前只需映射proczero (procid = 0)
 
-**任务清单:**
+除此之外, 主核的`main`在完成初始化工作后会调用`proc_make_first`来准备proczero的初始状态。QEMU使用双核, VisionFive2使用四核, 但本章都只让主核进入这一个用户进程
 
-1. lab-1中已经通过OpenSBI进入S-mode, 中断委托由固件完成。你需要在main函数中接入本章的中断初始化
+proczero的初始化流程如下:
 
-2. 本章给了一个UART输入回显函数的初步版本, 你需要让它支持换行和Backspace的能力, 思考一下怎么修改
+- 设置pid和state、从内核池申请并清零trapframe的物理页、通过`proc_pgtbl_init`申请用户页表(顺便完成trampoline和trapframe的映射, 不设置U权限)
 
-3. 找到一种方法识别UART输入引发的中断信号
+- 从普通池申请ustack的物理页并映射为RWU、设置ustack_npage为1和heap_top为0x2000
 
-4. 在合适的地方调用完善后的`uart_interrupt`来处理UART中断 (只用回显字符)
+- 为用户镜像(code + data)从普通池申请一个物理页、先清零再复制镜像、映射到0x1000并设置RWXU权限
 
-**1和2比较容易, 下面具体介绍3和4:**
+- 设置frame中的regs.epc (返回后被置为PC)、regs.x[2] (用户sp)
 
-首先关注`trap_init`和`trap_inithart`, 你应该在`main`的合适位置调用它们, 完成中断相关初始化
+- 设置内核相关的kstack、context.ra、context.sp字段 (内核栈页已由kvm_init分配映射, 不再重复分配)
 
-主核建立页表后调用`trap_init`, 再让其他核继续初始化。每个核启用页表后调用`trap_inithart`, 最后由它打开中断
+- 关闭中断、设置当前进程, 通过arch_switch完成上下文切换
 
-初始化过程包括: 设置各种中断的优先级、使能中断开关、设置响应阈值等, 主要在`plic_init`和`plic_enable`中
+**值得注意的问题: 用户程序的镜像从哪来?**
 
-`trap_inithart`还做了一个重要的工作, 将S-mode的中断入口地址设置为`kernel_vector`(in trap_entry.S)
+启动时, 我们交给QEMU或开发板固件的是内核镜像
 
-意味着在S-mode发生中断且中断开关允许响应时, CPU会让执行流跳转到`kernel_vector`的位置
+因此, 可以推断proczero对应的用户镜像一定会以某种方式嵌入内核
 
-`kernel_vector`的逻辑分为四个部分 (前置知识:RISC-V规定函数栈在内存里从高地址向低地址生长):
+注意到**include/kernel/proc.h**中有这样的声明
 
-- 上下文保存: 函数栈扩展以空出34*8个字节的空间, 保存通用寄存器、sepc和sstatus, 并保持16字节对齐
+```c
+extern uint8 user_image_start[], user_image_end[];
+```
 
-- 进入核心的陷阱处理逻辑: 将栈帧地址作为参数, `call kernel_trap`
+它们标记了嵌入镜像的起止位置, **arch/riscv64/user_image.S**通过`.incbin`把镜像放入内核
 
-- 上下文恢复: 从内存空间恢复寄存器状态, 收缩函数栈以恢复原来的sp并释放这部分内存空间
+这个镜像来自**user/init.c**。构建时先生成**init.elf**, 再用objcopy转换成不含ELF头的**init.bin**, 内核复制的是后者
 
-- 通过`sret`从陷阱处理执行流回到正常执行流
+修改**user/init.c**后, 按所用平台重新执行`make CONFIG=riscv64-qemu-virt-sbi build`或`make CONFIG=riscv64-visionfive2-uboot build`就能将新的用户镜像同步到内核
 
-可以看出, 其实`kernel_vector`核心就是为了保证`kernel_trap`能不受干扰地执行
+镜像的生成过程参见**mk/build.mk**的有关逻辑, 这里不做详细介绍。代码、数据和BSS共用一页, BSS不一定占用镜像文件中的字节, 因此复制前要清零整页, 并检查镜像长度不超过一页
 
-`kernel_trap`的逻辑本质就是一个`switch-case`过程:
+## 特权级内上下文切换 (context)
 
-- 通过状态寄存器保存的信息判断trap类型 (两个大类 + N个小类)
+让我们聚焦`proc_make_first`函数的最后一步: arch_switch(old_context, new_context)
 
-- 调用合适的处理函数来响应对应类型的trap (`external_interrupt`)
+`arch_switch`函数定义在**arch/riscv64/switch.S**中, 它的作用是将若干寄存器的值存入内存区域A, 再将内存区域B的值写入寄存器
 
-- 如果遇到意料之外/无法处理的中断和异常, 输出报错信息并终止即可
+获得寄存器的使用权意味着新的执行流开始工作, 失去寄存器的使用权意味着旧的执行流暂停执行
 
-`external_interrupt` 需要利用PLIC提供的能力来判断是哪一种外设中断
+在`proc_make_first`里, 新的执行流是proczero, 旧的执行流是OS内核本身(entry.S->start.c->main.c->proc_make_first)
 
-如果发现是串口中断, 调用对应的`uart_interrupt`作处理
+新执行流存储寄存器的内存区域是`proczero.context`, 旧的执行流呢?
 
-QEMU的串口中断号为10, VisionFive2为32, 请使用平台提供的`UART_IRQ`。PLIC用context区分各核的中断接收配置, 可以通过`PLIC_CONTEXT(arch_hart_id())`得到当前核的context
+注意到旧的执行流数量和CPU数量相等, 它们各自使用`boot_stacks`中的一段栈空间
 
-`plic_claim`返回0表示没有待处理的来源。领取到非零来源后, 需要在处理完设备请求时调用`plic_complete`, 告诉PLIC本次处理已经结束
+因此, 我们用`boot_context[NCPU]`分别保存各核启动执行流的context
 
-**逻辑流程梳理**: 串口中断发生->`kernel_vector`前半部分->`kernel_trap`->
+另外, `current[NCPU]`记录当前CPU执行的是哪个用户进程, 通过`myproc()`暴露给外界
 
-`external_interrupt`->`uart_interrupt`->`kernel_vector`后半部分
+## 特权级间上下文切换 (trapframe)
 
-## 时钟中断
+书接上文, `proc_make_first`在执行`arch_switch`之前会将`proczero.context.ra`设置为`enter_user`
 
-时钟是计算机的核心底层机制之一, 是机器指令有序执行的"心跳"或"节拍"
+这意味着`arch_switch`之后, proczero的执行流启动, 起始位置是`enter_user`
 
-**RISC-V提供的时钟模型是这样的:**
+让我们追随proczero的执行流, 将注意力从**kernel/proc/proc.c**转移到**kernel/trap/user.c**和**trampoline.S**
 
-- **time**按平台的时钟频率递增, 不等同于CPU的cycle计数
+`enter_user`是进程从内核态进入用户态前的准备工作。它先关闭中断、填写frame的内核信息, 再调用**arch/riscv64/syscall.c**中的`arch_user_return`完成其余准备。这些准备包括:
 
-- **MTIME**寄存器存储了硬件时间计数--`C1`, 不一定从内核启动时开始计数
+- 在frame的kernel_satp、kernel_sp、kernel_entry和kernel_hart中保存内核页表、内核栈顶、陷阱处理入口和hart编号
 
-- **MTIMECMP**寄存器存储了一个目标的时间计数--`C2`
+- 将trampoline高地址处的`user_vector`设为S-mode的trap处理入口 (控制流处于内核态则使用`kernel_vector`作为trap处理入口)
 
-- 如果某个时刻`C1`大于或等于`C2`, 则产生一个**时钟中断信号**
+- 将frame中保存的regs.epc写入sepc寄存器, 确保返回用户态后PC指针处于正确的位置
 
-- 时钟中断处理过程中, **MTIMECMP**寄存器会被更新成一个更大的值, 以确保一段时间后能再次触发时钟中断
+- 将U-mode设为S-mode的上一个状态 (proczero第一次进入用户态时上一个状态不是U-mode, 手动设置一下)
 
-- 本实验通过SBI设置下一次时钟事件, 目标值为当前time加上**TIMER_INTERVAL**
+- 设置返回后的中断状态、同步指令缓存, 准备参数并调用trampoline高地址处的`user_return`
 
-- 也就是说, 大约每隔**TIMER_INTERVAL**个时间计数, 产生一个时钟中断, 形成一次时钟滴答 (tick)
+我们将**trampoline.S**中的`user_vector`和`user_return`作为一个整体来看待, 更好地理解这个过程
 
-- QEMU的**TIMER_INTERVAL**设置为1000000, VisionFive2为400000, 对应时长需要除以各平台的timebase频率
+- 在proczero第一次调用`user_return`时, 将用户页表中的`TRAPFRAME`虚拟地址保存到了`sscratch`寄存器
 
-OS内核维护了一个全局的系统时钟, 它由一个ticks和自旋锁组成
+- `user_vector`先通过`sscratch`找到trapframe, 保存用户通用寄存器、sepc和sstatus
 
-你需要完成三个简单的操作函数: 时钟初始化, 时钟写入(ticks++), 时钟读取(返回ticks), 分别对应`timer_create`、`timer_update`和`timer_ticks`。读写ticks时都需要同步, 避免多个CPU同时访问带来的问题
+- `user_vector`随后恢复SP指针和hartid, 切换至内核页表, 调用`user_trap`
 
-**完成前置步骤后, 我们正式讨论时钟中断的实现:**
+- `user_trap`的工作在下一节做具体介绍, trap处理完成后进入返回阶段(`enter_user`)
 
-相比串口中断, 时钟中断的一个重要区别是: 本实验中相关寄存器(**MTIME**、**MTIMECMP**等)由M-mode的固件管理
+- `user_return`切换到用户页表, 恢复所有通用寄存器的值, 通过`sret`返回用户态
 
-因此, 本实验通过OpenSBI提供的时钟服务设置下一次中断, 内核不直接访问这些寄存器
+相比`kernel_vector`和`kernel_trap`组成的**A-B-A**结构
 
-**M-mode部分:**
+`user_vector`、`user_trap`、`enter_user`、`user_return`构成了更复杂的**A-B-C-D**结构
 
-这部分由OpenSBI完成, 负责管理机器时钟并向S-mode提供时钟中断。你可以阅读`timer_init`, 看看内核如何把下一次中断的时间交给固件
+值得注意的是: proczero 是直接从**C-D**开始的; 当用户态发生trap后, 才会走完**A-B-C-D**的完整过程
 
-**S-mode部分:**
+## 用户态陷阱处理
 
-每个核在`trap_inithart`中调用`timer_init`, 设置第一次时钟中断。中断发生后的流程是:
+让我们先总结一下目前提到的三类执行流:
 
-时钟中断发生->`kernel_vector`前半部分->`kernel_trap`->`timer_tick`
+- S-mode内核程序: entry.S->start.c->main.c->proc_make_first->执行流停滞
 
-->`timer_init`设置下一次中断 + 主核调用`timer_update`->`kernel_vector`后半部分
+- 进程的S-mode内核执行流: proczero刚诞生时从内核中开始执行, 遇到trap后也在内核中处理
 
-各核都需要设置自己的下一次中断, 但只有主核增加全局ticks, 否则计数会随着CPU数量增多而加快。QEMU使用双核, VisionFive2使用四核。与lab-1一样, 这里通过代码提供的接口判断主核, 不假定它是hart 0
+- U-mode用户程序: proczero中用户镜像的执行处于U-mode
 
-**机器态与监管态时钟处理关系示意:**
+进一步理解context和trapframe的区别:
 
-图中展示了通过软件中断转交处理的路径。本实验由OpenSBI提供S-mode时钟中断, 不需要内核制造软件中断
+- context是S-mode内核程序切换到进程的S-mode内核执行流需要用到的临时内存空间
 
-![pic](./pictures/02.png)
+- trapframe是U-mode用户程序切换到进程的S-mode内核执行流需要用到的临时空间
 
-## 测试用例
+- context不涉及特权级切换, 需要保存的寄存器数量和其他信息更少
 
-以下图片用于说明测试中可以观察的现象
+接下来我们讨论最后一个部分: `user_trap`
 
-**1. 时钟滴答测试, 在合适的地方加一行滴答输出**
+由于`user_trap`和`kernel_trap`都是在S-mode处理trap, 所以整体逻辑基本一样
 
-![pic](./pictures/03.png)
+主要区别在于:
 
-**2. 时钟快慢测试, 在合适的地方加一行ticks输出**
+- 进入`user_trap`后会重写trap入口, 将它设为`kernel_vector`
 
-![pic](./pictures/04.png)
+- `user_vector`已经将发生trap的PC值保存到frame中, `user_trap`处理时需要保留它, 确保正确返回用户态
 
-tips: 修改**TIMER_INTERVAL**, 观察ticks输出速度, 体会时钟滴答的快慢变化
+- `user_trap`需要多处理一种特殊的异常——**系统调用(syscall)**
 
-**3. UART输入测试, 验证是否能输入字符并回显到屏幕上(包括Backspace和换行)**
+这是我们第一次正式介绍**系统调用**(最重要的异常), 它在RISC-V中对应U-mode发出的ecall (8号异常)
 
-![pic](./pictures/05.png)
+注意: 系统调用返回时应该设置 PC=PC+4, 跳过本次ecall指令。`arch_syscall_return`会写入返回值并推进epc, 不要再重复加4。时钟和串口中断不推进epc
 
-**补充更多测试用例**
+系统调用是用户程序请求内核服务的入口
 
-助教给出的测试用例是远远不够的, 你需要补充更多测试用例以保证新增代码的正确性 
+**系统调用的本质是一组约定:**
 
-可以将你新增的测试用例和测试结果放在你的README里面
+- 用户程序传入系统调用号来指定系统调用类型, 内核通过`arch_syscall_decode`读取调用号和参数
 
-另外, 值得强调的一点是：学会使用`panic`和`assert`做必要的检查
+- 内核程序根据系统调用号, 进入不同的响应分支: 读取其他参数, 提供系统服务, 返回处理结果
 
-在出问题前输出有价值的错误信息, 比系统直接卡死或进入错误状态, 更容易Debug
+- 用户程序和内核程序通过trap机制进行通信, 实现跨特权级的"函数调用"
+
+## 测试
+
+**测试一: 系统调用**
+
+```c
+#include "sys.h"
+void user_main(void)
+{
+    if (hello() != 0) for (;;) {}
+    if (hello() != 0) for (;;) {}
+    for (;;) {}
+}
+```
+
+**user/init.c**里, 用户程序发出了两次系统调用, `user_trap`需要正确地响应它们
+
+方法很简单: 对`SYS_hello`输出`proczero: hello world!\n`并返回0, 遇到未知调用号则返回-38
+
+这个测试用于验证第一个用户进程是否能和内核交互并获得内核提供的服务
+
+**测试二: 用户态的时钟中断和串口中断**
+
+LAB-3中我们验证了内核态时钟中断和串口中断的响应
+
+现在请你测试一下, 在用户态, 中断响应是否能正常工作
 
 **尾声**
 
-通过前三个实验, 我们搭建了OS内核的基础设施 (第一阶段)
+相信你可以感觉到, 用户进程的引入明显提高了OS内核的复杂度
 
-- lab-1: 机器启动、标准输出、自旋锁
+进程模块和内存模块、陷阱模块有着密切的联系, 牵一发而动全身
 
-- lab-2: 物理内存、内核态虚拟内存
+因此, 我们做了细致的拆分, 让用户进程能力逐步变强, 数量由一到多
 
-- lab-3: 中断和异常 (串口输入和时钟滴答)
+- 在LAB-5: 我们将赋予proczero更强大的内存管理能力, 并建立真正的系统调用体系
 
-一切的准备都是为了引出OS内核世界中最重要的概念--进程 (第二阶段)
-
-- 进程需要基本的输入输出能力
-
-- 进程需要自己的内存资源和虚拟地址空间
-
-- 进程需要通过系统调用(一种异常)来获取OS内核服务
-
-**新手村任务结束了, 准备接受更大的挑战吧......**
+- 在LAB-6：我们将引入proczero的子子孙孙, 实现完整的进程生命周期管理和多进程调度
 
 ## 进阶目标
 
-### 内核 shell
+### 用户程序与内核跨语言组合
 
-本次实验已经可以从串口接收字符并回显。如果把一行输入当作一条命令, 我们就可以通过串口查看内核状态。这样的命令交互程序称为shell, 可以先从几个简单的命令做起。
+用户程序通过系统调用与内核交互, 两边不一定要使用同一种语言。只要对调用号、参数和返回值的传递方式有相同约定, C用户程序也可以向Rust内核请求服务, 反过来也是一样。
 
-请你尝试在中断处理时把字符放入缓冲区, 再由主循环取出完整命令执行。可以先实现查询ticks的命令, 再测试退格、长输入和连续输入, 观察执行命令时, 时钟是否仍在正常计数。注意：耗时的命令不要放在中断处理函数中执行。
+请你尝试将另一种语言编写的用户程序嵌入内核, 先比较两套仓库的用户镜像布局和系统调用接口, 再接入构建过程。观察两次hello能否返回0, 用户态时钟和串口中断是否仍正常。注意：嵌入的是平坦二进制, 入口、栈对齐和单页大小限制也需要保持一致。
 
-### panic 诊断
+### 内核线程
 
-遇到无法处理的异常时, 本章会输出原因、指令地址和stval。如果再打印寄存器或函数调用经过, 是否更容易找到出错的位置？沿着栈查找调用经过的过程称为栈回溯, 但出错时栈本身也可能已经损坏。
+本次实验先通过context切换到进程的内核栈, 再进入用户态。如果新的执行流只执行内核函数, 就不需要准备返回用户态的过程, 这便是内核线程的一种起点。
 
-请你尝试补充panic的诊断信息, 先打印寄存器, 再探索有限深度的栈回溯。可以用非法指令和错误地址检查输出, 并观察持有打印锁时能否正常报告错误。读取栈之前需要检查地址范围和对齐, 遇到无效地址就停止回溯。
+请你尝试为一个简单的内核函数准备独立的栈和context, 切换过去并输出信息, 同时考虑这个函数返回后应当去哪里。观察切换前后的栈和寄存器是否正确, 多线程调度可以留到lab-6再继续尝试。
 
-### tickless
+### HHDM
 
-本次实验定期产生时钟中断, 即使内核没有事情可做也会被打断。tickless的思路是按下一件事情需要发生的时间设置中断, 减少空闲时不必要的时钟滴答。这时中断间隔不再固定, 也就不能只用中断次数表示经过的时间。
+本次实验主要通过恒等映射访问物理内存, 虚拟地址与物理地址相同。HHDM (Higher Half Direct Map) 则把一段物理内存映射到高地址区域, 使二者相差一个固定偏移, 内核可以通过这段映射访问物理页。
 
-请你尝试安排几个不同时间触发的测试事件, 每次选择最近的时间设置定时器, 并读取硬件时间计算实际经过的时长。比较相同空闲时间内的中断次数和事件触发误差, 也试试多个事件同时到期的情况。进程调度和睡眠唤醒可以留到后续实验再结合。
+请你先找出分配器和页表代码中依赖恒等映射的地方, 再选择一段内存尝试固定偏移映射。比较两种地址访问同一物理页的结果, 观察切换页表后是否仍能访问, 并检查这段映射是否与trampoline和内核栈重叠。设备地址和固件保留区需要单独考虑, 不能对所有地址都直接加上偏移。
