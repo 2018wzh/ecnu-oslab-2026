@@ -1,0 +1,11 @@
+#ifndef OSLAB_PLATFORM_H
+#define OSLAB_PLATFORM_H
+#define PLATFORM_NAME "visionfive2"
+#define HART_FIRST 1
+#define NCPU 4
+#define DRAM_BASE 0x40000000UL
+#define DRAM_SIZE (128UL * 1024 * 1024)
+#define UART_BASE 0x10000000UL
+#define UART_CLOCK 24000000
+#define UART_SHIFT 2
+#endif
