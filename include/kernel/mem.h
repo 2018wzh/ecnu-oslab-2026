@@ -45,4 +45,6 @@ void vm_unmappages(pgtbl_t root, uint64 va, uint64 len, bool free_pages);
 void kvm_init(void);
 void kvm_inithart(void);
 void vm_print(pgtbl_t root);
+/* TODO(lab-7): 独立内核 VA 转 PA；查询 kernel_pgtbl，验证叶项，叠加页内偏移。 */
+uint64 kvm_translate(uint64 va);
 #endif

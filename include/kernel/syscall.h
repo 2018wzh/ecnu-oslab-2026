@@ -15,4 +15,15 @@ long sys_fork(void);
 long sys_exit(const syscall_args_t *call);
 long sys_wait(const syscall_args_t *call);
 long sys_sleep(const syscall_args_t *call);
+long sys_alloc_block(const syscall_args_t *call);
+long sys_free_block(const syscall_args_t *call);
+long sys_alloc_inode(const syscall_args_t *call);
+long sys_free_inode(const syscall_args_t *call);
+long sys_show_bitmap(const syscall_args_t *call);
+long sys_get_block(const syscall_args_t *call);
+long sys_read_block(const syscall_args_t *call);
+long sys_write_block(const syscall_args_t *call);
+long sys_put_block(const syscall_args_t *call);
+long sys_show_buffer(const syscall_args_t *call);
+long sys_flush_buffer(const syscall_args_t *call);
 #endif

@@ -15,3 +15,14 @@ long mmap(unsigned long address, unsigned long len)
 long munmap(unsigned long address, unsigned long len)
 { return syscall6(SYS_MUNMAP, address, len, 0, 0, 0, 0); }
 long getpid(void) { return syscall6(SYS_GETPID, 0, 0, 0, 0, 0, 0); }
+long alloc_block(void) { return syscall6(SYS_ALLOC_BLOCK, 0, 0, 0, 0, 0, 0); }
+long free_block(unsigned int number) { return syscall6(SYS_FREE_BLOCK, number, 0, 0, 0, 0, 0); }
+long alloc_inode(void) { return syscall6(SYS_ALLOC_INODE, 0, 0, 0, 0, 0, 0); }
+long free_inode(unsigned int number) { return syscall6(SYS_FREE_INODE, number, 0, 0, 0, 0, 0); }
+long show_bitmap(unsigned int inode) { return syscall6(SYS_SHOW_BITMAP, inode, 0, 0, 0, 0, 0); }
+long get_block(unsigned int block) { return syscall6(SYS_GET_BLOCK, block, 0, 0, 0, 0, 0); }
+long read_block(unsigned long token, void *data) { return syscall6(SYS_READ_BLOCK, token, (long)data, 0, 0, 0, 0); }
+long write_block(unsigned long token, const void *data) { return syscall6(SYS_WRITE_BLOCK, token, (long)data, 0, 0, 0, 0); }
+long put_block(unsigned long token) { return syscall6(SYS_PUT_BLOCK, token, 0, 0, 0, 0, 0); }
+long show_buffer(void) { return syscall6(SYS_SHOW_BUFFER, 0, 0, 0, 0, 0, 0); }
+long flush_buffer(unsigned int count) { return syscall6(SYS_FLUSH_BUFFER, count, 0, 0, 0, 0, 0); }

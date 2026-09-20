@@ -11,3 +11,5 @@ void main(void)
 {
     panic("TODO(lab-1): main");
 }
+
+// TODO(lab-7): 主核 block_init，在磁盘 PLIC 使能之前完成；失败停止。

@@ -65,3 +65,5 @@ void uart_interrupt(void)
     // TODO(lab-3): 在教师读取循环中补充换行和 Backspace 的回显处理。
     while ((c = uart_getc(UART_BASE, UART_SHIFT)) != -1) console_putc((char)c);
 }
+
+// TODO(lab-7): 配置 BLOCK_IRQ 优先级、每核使能；外设 claim 匹配后调用 block_interrupt，再 complete。

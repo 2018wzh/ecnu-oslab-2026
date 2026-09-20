@@ -20,3 +20,5 @@ void proc_sleep(void *chan, spinlock_t *condition_lock)
 void proc_wakeup(void *chan) { (void)chan; panic("TODO(lab-6): proc_wakeup"); }
 // TODO(lab-6): 首次在自己的内核栈执行，释放调度器交来的进程锁，再 enter_user。
 void proc_first_return(void) { panic("TODO(lab-6): proc_first_return"); }
+
+// TODO(lab-7): proc_first_return 中，proczero 释放进程锁后、enter_user 前单次 fs_init；可睡眠，失败停止。

@@ -7,6 +7,7 @@ include mk/platform/$(PLATFORM).mk
 include mk/boot/$(BOOT).mk
 include mk/build.mk
 include mk/run.mk
+include mk/disk.mk
 include mk/image.mk
 
 .PHONY: help

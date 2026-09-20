@@ -1,5 +1,6 @@
 #ifndef OSLAB_ARCH_H
 #define OSLAB_ARCH_H
+void arch_dma_fence(void);
 #include <kernel/types.h>
 /* CPU 身份、S-mode 状态与嵌套中断操作；平台参数决定 hart 到 cpuid 的映射。 */
 uint64 arch_hart_id(void);

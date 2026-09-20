@@ -49,3 +49,8 @@ static void print_level(pgtbl_t root, unsigned level)
 /* 教师诊断：root 及所有中间表须有效，遍历期间不允许修改。 */
 void vm_print(pgtbl_t root)
 { printf("root pgtbl: pa=%p\n", (void *)root); print_level(root, 2); }
+
+/* 不改变 vm_getpte(NULL, ...) 的非法参数契约。缺失映射 panic。 */
+uint64 kvm_translate(uint64 va) { (void)va; panic("TODO(lab-7): kvm_translate"); }
+
+// TODO(lab-7): kvm_init 中调用 block_map，保持普通页表空参数契约不变。

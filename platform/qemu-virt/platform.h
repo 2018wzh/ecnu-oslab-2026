@@ -9,6 +9,9 @@
 #define UART_CLOCK 3686400
 #define UART_SHIFT 0
 #define UART_IRQ 10
+#define BLOCK_BASE 0x10001000UL
+#define BLOCK_IS_SD 0
+#define BLOCK_IRQ 1
 #define PLIC_BASE 0x0c000000UL
 #define PLIC_SIZE 0x04000000UL
 #define PLIC_CONTEXT(hart) (2 * (hart) + 1)

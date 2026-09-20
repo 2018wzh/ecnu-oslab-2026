@@ -1,5 +1,6 @@
 /* 每核身份和带嵌套计数的中断开关。 */
 #include <kernel/arch.h>
+void arch_dma_fence(void) { __asm__ volatile("fence iorw, iorw" ::: "memory"); }
 #include <kernel/print.h>
 #include <asm/csr.h>
 #include <platform.h>

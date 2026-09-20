@@ -14,6 +14,7 @@ $(BUILD)/user/init.bin: $(BUILD)/user/init.elf
 $(BUILD)/arch/riscv64/user_image.o: $(BUILD)/user/init.bin
 KERNEL_C += kernel/mem/uvm.c kernel/mem/mmap.c kernel/syscall/syscall.c kernel/syscall/sysfunc.c kernel/syscall/memory.c
 KERNEL_C += kernel/proc/lifecycle.c kernel/proc/schedule.c kernel/lock/sleeplock.c kernel/syscall/process.c
+KERNEL_C += drivers/block/virtio_blk.c drivers/block/sd.c kernel/fs/block.c kernel/fs/buffer.c kernel/fs/bitmap.c kernel/fs/fs.c kernel/syscall/disk.c
 SOURCES := $(KERNEL_C) $(ARCH_C) $(PLATFORM_C)
 OBJECTS := $(addprefix $(BUILD)/,$(SOURCES:.c=.o) $(ARCH_S:.S=.o))
 -include $(OBJECTS:.o=.d)
