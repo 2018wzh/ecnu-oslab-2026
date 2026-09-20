@@ -12,11 +12,12 @@ $(BUILD)/user/init.elf: user/init.c user/syscall.c user/arch/$(ARCH)/entry.S use
 $(BUILD)/user/init.bin: $(BUILD)/user/init.elf
 	$(OBJCOPY) -O binary $< $@
 $(BUILD)/arch/riscv64/user_image.o: $(BUILD)/user/init.bin
-KERNEL_C += kernel/mem/uvm.c kernel/mem/mmap.c kernel/syscall/syscall.c kernel/syscall/sysfunc.c kernel/syscall/memory.c
+KERNEL_C += kernel/mem/uvm.c kernel/mem/mmap.c kernel/syscall/syscall.c kernel/syscall/memory.c
 KERNEL_C += kernel/proc/lifecycle.c kernel/proc/schedule.c kernel/lock/sleeplock.c kernel/syscall/process.c
-KERNEL_C += drivers/block/virtio_blk.c drivers/block/sd.c kernel/fs/block.c kernel/fs/buffer.c kernel/fs/bitmap.c kernel/fs/fs.c kernel/syscall/disk.c
+KERNEL_C += drivers/block/virtio_blk.c drivers/block/sd.c kernel/fs/block.c kernel/fs/buffer.c kernel/fs/bitmap.c kernel/fs/fs.c
 KERNEL_C += kernel/fs/inode.c kernel/fs/dentry.c kernel/fs/lab8_examples.c
 CPPFLAGS += -DLAB8_TEST=$(or $(LAB8_TEST),0)
+KERNEL_C += kernel/fs/file.c kernel/fs/path.c kernel/fs/device.c kernel/lib/console_input.c kernel/lib/elf.c kernel/proc/files.c kernel/proc/exec.c kernel/syscall/file.c arch/riscv64/exec.c
 SOURCES := $(KERNEL_C) $(ARCH_C) $(PLATFORM_C)
 OBJECTS := $(addprefix $(BUILD)/,$(SOURCES:.c=.o) $(ARCH_S:.S=.o))
 -include $(OBJECTS:.o=.d)
@@ -35,8 +36,15 @@ $(BUILD)/kernel.elf: $(OBJECTS) $(BUILD)/kernel.ld
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $< $@
 .PHONY: build
-build: $(BUILD)/kernel.elf
+build: $(BUILD)/kernel.elf user-programs
 
 # 例程选择是编译参数；切换 LAB8_TEST 后必须重新编译此对象。
 .PHONY: lab8-example-config
 $(BUILD)/kernel/fs/lab8_examples.o: lab8-example-config
+
+USER_ELFS := $(addprefix $(BUILD)/user/,test_1.elf test_2.elf test_3.elf test_4.elf)
+$(BUILD)/user/test_%.elf: user/test_%.c user/help.c user/help.h user/syscall.c user/sys.h include/uapi/syscall.h user/arch/$(ARCH)/elf.ld user/arch/$(ARCH)/entry.S
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -Iuser/arch/$(ARCH) $(CFLAGS) -nostdlib -static -Wl,--no-relax,-T,user/arch/$(ARCH)/elf.ld $< user/help.c user/syscall.c user/arch/$(ARCH)/entry.S -o $@
+.PHONY: user-programs
+user-programs: $(USER_ELFS)

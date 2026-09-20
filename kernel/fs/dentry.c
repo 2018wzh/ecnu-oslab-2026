@@ -157,3 +157,11 @@ inode_t* path_to_parent_inode(char *path, char *name)
 {
 	return __path_to_inode(path, name, true);
 }
+
+// TODO(lab-9): 按 inode 编号反查名称并填入 name，返回名称字节长度（不含 NUL），失败 UINT32_MAX。
+uint32 dentry_search_number(inode_t *ip, uint32 number, char *name)
+{ (void)ip; (void)number; (void)name; panic("TODO(lab-9): dentry_search_number"); }
+// TODO(lab-9): 持 inode 锁传输有效目录项；容量和返回值均为字节，失败 UINT32_MAX。
+uint32 dentry_transmit(inode_t *ip, uint64 dst, uint32 buffer_len, bool is_user_dst)
+{ (void)ip; (void)dst; (void)buffer_len; (void)is_user_dst; panic("TODO(lab-9): dentry_transmit"); }
+// TODO(lab-9): __path_to_inode 相对路径从当前进程 cwd 的新增引用开始；绝对路径仍从根开始。

@@ -4,6 +4,7 @@
 #include <kernel/trap.h>
 #include <kernel/context.h>
 #include <kernel/lock.h>
+#include <kernel/file.h>
 #define N_PROC 32
 #define USER_ENTRY 0x1000UL
 #define TRAMPOLINE (VA_MAX - PAGE_SIZE)
@@ -35,6 +36,9 @@ typedef struct proc {
     user_frame_t *frame;  /* 内核通过物理恒等映射访问独占 frame 页。 */
     uint64 kstack;        /* 高地址虚拟栈底，不是可直接回收的物理地址。 */
     struct mmap_region *mmap; /* 已分配区域链，首进程初始化为空。 */
+    file_t *files[N_FD];
+    inode_t *cwd;
+    bool reclaiming; /* p->lock 保护的内部回收标记，不是进程状态。 */
     context_t context;
 } proc_t;
 extern proc_t proc_table[N_PROC];
@@ -43,7 +47,8 @@ int proc_alloc_pid(void);
 void proc_pid_init(void);
 void proc_table_init(void);
 proc_t *proc_slot_alloc(void); /* 返回持锁槽，耗尽 NULL。 */
-void proc_free(proc_t *p); /* 调用者持 p->lock；释放资源后仍持锁。 */
+void proc_free(proc_t *p); /* 调用时只持 p->lock；中途解锁关闭文件，返回仍持该锁。 */
+int proc_exec(const char *path, const char *const argv[], size_t argc);
 long proc_fork(void);
 void proc_reparent(proc_t *parent);
 void proc_try_wakeup(proc_t *p); /* 调用者持 p->lock。 */

@@ -17,5 +17,5 @@ void sb_print(const superblock_t *sb)
 void fs_init(void) {
     panic("TODO(lab-7): fs_init");
     /* TODO(lab-8): 完成前序初始化后，在合适位置调用 inode_init。 */
-    lab8_examples(); /* 末尾；仅可睡眠的首进程上下文，默认关闭。 */
+    /* TODO(lab-9): inode 初始化后调用 file_init 和 device_init。 */
 }

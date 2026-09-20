@@ -47,4 +47,6 @@ inode_t* path_to_inode(char *path);
 inode_t* path_to_parent_inode(char *path, char *name);
 
 void lab8_examples(void);
+uint32 dentry_search_number(inode_t *ip, uint32 number, char *name);
+uint32 dentry_transmit(inode_t *ip, uint64 dst, uint32 buffer_len, bool is_user_dst);
 #endif

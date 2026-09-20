@@ -1,25 +1,63 @@
-# lab-6 系统调用 ABI
+# lab-9 系统调用 ABI
 
-RV64 S-mode / OpenSBI；用户以 ecall 进入，a7 是完整调用号，a0..a5 为参数，a0 为返回值。
-寄存器读写在 C 架构层 / Rust HAL，通用层只操作调用结构。
+RV64 S-mode / OpenSBI；ecall 的 a7 是完整调用号，a0..a5 是参数，a0 是返回值。
+架构层只负责解码及返回寄存器；通用内核不读取 CSR。
 
-| 编号 | 调用 | 参数 | 成功返回 |
+从 lab-8 进入 lab-9 时必须重编全部用户程序：编号切换为下面的 1～22；
+前序 print_str/print_int 和磁盘测试调用撤下。编号和全部声明由教师提供；
+1～8 分派由教师提供，9～22 接线及函数主体由学生完成。
+
+| 编号 | 调用 | 参数顺序 | 成功返回 |
 | --- | --- | --- | --- |
 | 1 | brk | 新堆顶，0 查询 | 堆顶 |
 | 2 | mmap | 地址（0 首次适配）、字节长度 | 映射地址 |
 | 3 | munmap | 地址、字节长度 | 0 |
-| 4 | print_str | NUL 字符串地址 | 0 |
-| 5 | print_int | 有符号 32 位整数 | 0 |
-| 6 | getpid | 无 | 正 PID |
-| 7 | fork | 无 | 父得子 PID，子得 0 |
-| 8 | wait | i32 状态地址，0 忽略状态 | 被回收子 PID |
-| 9 | exit | i32 退出状态 | 不返回 |
-| 10 | sleep | tick 数 | 0 |
+| 4 | fork | 无 | 父得子 PID，子得 0 |
+| 5 | wait | i32 状态地址，0 忽略 | 回收子 PID |
+| 6 | exit | i32 状态 | 不返回 |
+| 7 | sleep | tick 数 | 0 |
+| 8 | getpid | 无 | PID |
+| 9 | exec | path、argv | argc |
+| 10 | open | path、mode | fd |
+| 11 | close | fd | 0 |
+| 12 | read | fd、len、addr | 字节数 |
+| 13 | write | fd、len、addr | 字节数 |
+| 14 | lseek | fd、u32 offset、flag | 新偏移 |
+| 15 | dup | fd | 新 fd |
+| 16 | fstat | fd、addr | 0 |
+| 17 | get_dentries | fd、addr、buffer_len | 字节数 |
+| 18 | mkdir | path | 0 |
+| 19 | chdir | path | 0 |
+| 20 | print_cwd | 无 | 0 |
+| 21 | link | old_path、new_path | 0 |
+| 22 | unlink | path | 0 |
 
-0 及未知号打印完整编号与 pid 后 panic。fork 无槽、wait 无孩子返回 -1。
-内存调用的范围、对齐、溢出检查及 -1 契约继承 lab-5；底层耗尽和非法用户复制 panic，
-不增加回滚或坏指针重试要求。打印须先复制，成功为 0；不提供 write/hello/临时 copy 服务。
+read/write 失败返回 0，其他可失败调用返回 -1；exit 不返回。未知号 panic。
+内存范围、页对齐及底层耗尽/非法用户复制 panic 继承前序章节；本章字符串格式超限则返回 -1。
 
-fork 复制父进程尚未推进的 ecall frame；子经架构返回接口设置 0 并推进 PC 4 字节一次。
-父返回子 PID 后由用户 trap 经同一接口推进一次，不能再次推进子 PC；中断和缺页重试不推进。
-用户映像入口 0x1000，代码、数据及 BSS 合计一页；栈顶、mmap 与页表所有权继承 lab-5。
+open：OPEN_CREATE=1、OPEN_READ=2、OPEN_WRITE=4，可按位或。不增加截断任务。
+lseek：u32 无符号偏移；LSEEK_SET=0、LSEEK_ADD=1、LSEEK_SUB=2，尽力而为移动；不额外规定越界策略。
+get_dentries 容量/返回都按字节，是有效目录项批量传输，不是返回项数；失败 -1。
+print_cwd 无缓冲参数，内核打印路径，成功 0、失败 -1。
+inode_to_path 从缓冲区尾端逆向填充含 NUL 的路径，返回起始偏移；path+offset 才是字符串。
+
+fstat 共 16 字节，小端，C/Rust repr(C) 布局相同：
+
+| 字节偏移 | 字段 | 类型 |
+| --- | --- | --- |
+| 0 | type（Rust kind） | u16 |
+| 2 | nlink | u16 |
+| 4 | size | u32 |
+| 8 | inode_num | u32 |
+| 12 | offset | u32 |
+
+全局 file 128 个，每进程 10 个；exec 最多 32 个参数，单参数含 NUL 最多 128 字节。
+STR_MAXLEN=127 指内容最多 127 字节，另加 NUL；路径输入缓冲 128 字节。
+复制到缓冲后必须验证其中存在 NUL，超长或缺终止符失败；路径组件继承 59 字节加 NUL。
+Rust 用户虚拟地址保留 UserAddr/usize，经页表复制后才形成内核切片；禁止把用户整数直接转成引用。
+
+fork 复制尚未推进的父 ecall frame；子经普通返回辅助写 0 并推进一次，父经用户 trap 推进一次。
+exec 先完成新页表/frame 再替换旧资源，成功返回 argc。
+用户 trap 在 dispatch 前保存原调用号，之后重新获取当前 frame（旧 frame 可能已释放）；
+成功 exec 只写 a0=argc，保留新 PC。普通调用及 exec 失败才把旧 ecall PC 加 4，随后正常返回用户态。
+C 使用 arch_syscall_finish，Rust 使用 HAL syscall::finish。

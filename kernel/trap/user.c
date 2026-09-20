@@ -21,3 +21,7 @@ void user_trap(void) { panic("TODO(lab-4): user_trap"); }
  * 用户页表和 frame 有效且由当前进程独占；通过 arch_user_return 完成架构准备。
  */
 void enter_user(void) { panic("TODO(lab-4): enter_user"); }
+
+// TODO(lab-9): 保存原调用号，dispatch 后重新取得当前 frame；成功 exec 保留新入口 PC、a0=argc；
+// C 用 arch_syscall_finish，Rust 用 HAL syscall::finish(result, number==SYS_EXEC && result>=0)。
+// 普通调用/exec 失败才推进旧 ecall PC；随后走正常用户态返回路径。

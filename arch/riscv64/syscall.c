@@ -22,3 +22,9 @@ uint64 arch_kernel_satp(void) { return csr_read(satp); }
  */
 void arch_user_return(uint64 user_satp, uint64 pc)
 { (void)user_satp; (void)pc; panic("TODO(lab-4): arch_user_return"); }
+
+#include <uapi/syscall.h>
+void arch_syscall_finish(trapframe_t *frame, uint64 number, long result) {
+    if (number == SYS_EXEC && result >= 0) frame->x[10] = (uint64)result;
+    else arch_syscall_return(frame, result);
+}

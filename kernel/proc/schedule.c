@@ -22,3 +22,5 @@ void proc_wakeup(void *chan) { (void)chan; panic("TODO(lab-6): proc_wakeup"); }
 void proc_first_return(void) { panic("TODO(lab-6): proc_first_return"); }
 
 // TODO(lab-7): proc_first_return 中，proczero 释放进程锁后、enter_user 前单次 fs_init；可睡眠，失败停止。
+
+// TODO(lab-9): 首进程 fs 初始化后调用 files 初始化任务，cwd=root，依次打开 stdin/stdout/stderr。

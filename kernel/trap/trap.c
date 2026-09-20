@@ -11,6 +11,7 @@ void trap_init(void)
 {
     plic_init(PLIC_BASE, UART_IRQ);
     timer_create();
+    console_input_init();
     uart_enable_rx(UART_BASE, UART_SHIFT);
 }
 /* 初始化 trap 中各个核心独有的东西；所有依赖就绪后才打开中断。 */
@@ -62,8 +63,7 @@ void external_interrupt(void) { panic("TODO(lab-3): external_interrupt"); }
 void uart_interrupt(void)
 {
     int c;
-    // TODO(lab-3): 在教师读取循环中补充换行和 Backspace 的回显处理。
-    while ((c = uart_getc(UART_BASE, UART_SHIFT)) != -1) console_putc((char)c);
+    while ((c = uart_getc(UART_BASE, UART_SHIFT)) != -1) console_input((uint8)c);
 }
 
 // TODO(lab-7): 配置 BLOCK_IRQ 优先级、每核使能；外设 claim 匹配后调用 block_interrupt，再 complete。

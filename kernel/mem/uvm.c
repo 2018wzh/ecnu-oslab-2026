@@ -33,9 +33,9 @@ void copy_to_user(proc_t *p, uint64 dst, const void *src, size_t len)
 // TODO(lab-5): 最多复制 maxlen 字节，遇 NUL 终止；支持非对齐及跨页，不新增超长报错契约。
 void copy_str_from_user(proc_t *p, char *dst, uint64 src, size_t maxlen)
 { (void)p; (void)dst; (void)src; (void)maxlen; panic("TODO(lab-5): copy_str_from_user"); }
-// TODO(lab-5): 独立堆增长：按页申请普通池页面并映射 RWU，返回新堆顶，不超过 MMAP_BEGIN。
-uint64 uvm_heap_grow(pgtbl_t root, uint64 top, uint64 len)
-{ (void)root; (void)top; (void)len; panic("TODO(lab-5): uvm_heap_grow"); }
+// TODO(lab-5): 独立堆增长：按页申请并清零普通池页面，映射 flags|U，返回新堆顶，不超过 MMAP_BEGIN。
+uint64 uvm_heap_grow(pgtbl_t root, uint64 top, uint64 len, uint64 flags)
+{ (void)root; (void)top; (void)len; (void)flags; panic("TODO(lab-5): uvm_heap_grow"); }
 // TODO(lab-5): 独立堆收缩：解除映射并归还普通页，返回新堆顶，不低于 0x2000。
 uint64 uvm_heap_ungrow(pgtbl_t root, uint64 top, uint64 len)
 { (void)root; (void)top; (void)len; panic("TODO(lab-5): uvm_heap_ungrow"); }
@@ -77,3 +77,6 @@ void uvm_destroy(pgtbl_t root)
     }
     destroy_pgtbl(root, 3);
 }
+
+// TODO(lab-9): heap_grow 支持输入 R/W/X 权限并加 U；exec 的字节堆顶按页覆盖映射且清零新页。
+// 普通 brk 仍沿用前序页对齐契约并传 RW。

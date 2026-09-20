@@ -21,7 +21,7 @@ void copy_from_user(proc_t *p, void *dst, uint64 src, size_t len);
 void copy_to_user(proc_t *p, uint64 dst, const void *src, size_t len);
 /* 最多复制 maxlen 字节，遇 NUL 提前结束；达到上限无需强行补 NUL。 */
 void copy_str_from_user(proc_t *p, char *dst, uint64 src, size_t maxlen);
-uint64 uvm_heap_grow(pgtbl_t root, uint64 top, uint64 len);
+uint64 uvm_heap_grow(pgtbl_t root, uint64 top, uint64 len, uint64 flags);
 uint64 uvm_heap_ungrow(pgtbl_t root, uint64 top, uint64 len);
 /* 成功更新 ustack_npage；非法栈地址 panic。 */
 void uvm_stack_grow(proc_t *p, uint64 fault);

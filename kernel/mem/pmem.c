@@ -22,3 +22,6 @@ void *pmem_alloc(bool kernel)
  */
 void pmem_free(uint64 pa, bool kernel)
 { (void)pa; (void)kernel; panic("TODO(lab-2): pmem_free"); }
+
+// TODO(lab-9): 在对应物理池锁保护下统计空闲页。
+uint64 pmem_stat(bool kernel) { (void)kernel; panic("TODO(lab-9): pmem_stat"); }
