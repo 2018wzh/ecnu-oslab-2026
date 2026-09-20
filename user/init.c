@@ -1,7 +1,11 @@
 #include "sys.h"
+
 void user_main(void)
 {
-    if (hello() != 0) for (;;) {}
-    if (hello() != 0) for (;;) {}
-    for (;;) {}
+	int pid = getpid();
+	if (pid == 1) {
+		print_str("\nproczero: hello ");
+		print_str("world!\n");
+	}
+	while (1);
 }

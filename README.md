@@ -1,16 +1,18 @@
-# LAB-5: 系统调用流程建立 + 用户态虚拟内存管理
+# LAB-6: 单进程走向多进程——进程调度与生命周期
 
 **前言**
 
-在lab-4中, 我们初步实现了第一个用户进程`proczero`
+经过lab-4的初创和lab-5的完善, proczero已经比较成熟了
 
-它通过`hello`系统调用, 利用内核的系统服务发出了"第一声啼哭"
+从零到一很缓慢, 但是从一到多很快：可以"复制proczero"来产生更多进程
 
-本次实验的核心目的是完善和发展`proczero`, 具体包括两个方面:
+产生更多进程后, 需要解决新产生的两个问题
 
-- 赋予`proczero`更强的内存掌控能力, 包括堆、栈、离散映射三个部分
+- 多个进程会竞争CPU资源 (之前几乎由proczero独占)
 
-- 赋予`proczero`完善的请求服务能力, 建立真正的系统调用流程
+- 进程新生与死亡的问题 (之前的proczero诞生后永不死亡)
+
+因此, 本次实验主要关注两个主题: 进程调度 + 生命周期
 
 ## 代码组织结构
 
@@ -20,26 +22,29 @@ ECNU-OSLAB-2026
 ├── README.md      实验指导书 (CHANGE, 日常更新)
 ├── include
 │   ├── kernel
-│   │   ├── uvm.h (NEW, 用户内存与区域接口)
-│   │   ├── proc.h (CHANGE, 新增mmap字段)
-│   │   └── syscall.h (CHANGE, 系统调用接口)
+│   │   ├── proc.h (CHANGE, 进程结构与接口)
+│   │   └── lock.h (CHANGE, 睡眠锁接口)
 │   └── uapi/syscall.h (CHANGE, 系统调用号)
 ├── kernel
-│   ├── mem
-│   │   ├── uvm.c (TODO, 用户态虚拟内存管理主体)
-│   │   └── mmap.c (TODO, mmap节点资源仓库)
-│   ├── trap/user.c (TODO, 系统调用处理 + pagefault处理)
-│   ├── proc/proc.c (TODO, proczero.mmap初始化)
+│   ├── lock/sleeplock.c (TODO, 实现睡眠锁)
+│   ├── mem/kvm.c (TODO, 映射多个内核栈)
+│   ├── trap
+│   │   ├── timer.c (TODO, 时钟等待与唤醒)
+│   │   ├── trap.c (TODO, 内核态时钟抢占)
+│   │   └── user.c (TODO, 用户态时钟抢占)
+│   ├── proc
+│   │   ├── proc.c (TODO, 创建首进程)
+│   │   ├── lifecycle.c (TODO, 进程数组与生命周期)
+│   │   └── schedule.c (TODO, 调度与睡眠唤醒)
 │   ├── syscall
-│   │   ├── syscall.c (NEW, 系统调用通用逻辑)
-│   │   ├── sysfunc.c (TODO, hello处理逻辑)
-│   │   └── memory.c (TODO, 内存系统调用处理逻辑)
-│   └── main.c (TODO, 初始化节点仓库)
+│   │   ├── syscall.c (CHANGE, 系统调用分派)
+│   │   ├── sysfunc.c (TODO, 打印系统调用)
+│   │   └── process.c (TODO, 进程系统调用)
+│   └── main.c (TODO, 初始化进程数组并进入调度器)
 └── user
     ├── init.c (按测试需求修改)
     ├── sys.h (CHANGE)
-    ├── syscall.c (CHANGE)
-    └── arch/riscv64/syscall_arch.h
+    └── syscall.c (CHANGE)
 ```
 
 **标记说明**
@@ -50,499 +55,444 @@ ECNU-OSLAB-2026
 
 **TODO**: 你需要实现新功能 / 你需要完善旧功能
 
-## 任务1：用户态和内核态的数据迁移
+## 准备工作: 引入进程数组
 
-回忆一下上个实验的`hello`系统调用, 它的作用是让内核输出`"hello world"`
+首先关注进程结构体的变化 (in `include/kernel/proc.h`), 我们新增了若干字段:
 
-一个明显的问题: 这个系统调用没有接收用户参数, 导致系统服务非常僵硬和受限
+- `char name[16]` 进程名称, 服务于debug
 
-我们可以从普通函数的参数传递获得启示, 传参方法无非两种:
+- `spinlock_t lock` 自旋锁, 用于保证共享字段的访问和修改不被打断
 
-- 直接传递值: `add(int a, int b)`, 本质是将参数值放到寄存器里
+- `proc_state_t state` 共享字段1: 进程状态 (共5种), 与生命周期相关
 
-- 基于地址做间接传递: `memcmp(const void *s1, const void *s2, size_t len)`, 本质是将地址放到寄存器里
+- `_Atomic(struct proc *) parent` 共享字段2: 当前进程的父进程, 进程复制过程包含父子关系的建立
 
-通过阅读`user/arch/riscv64/syscall_arch.h`, 可以发现系统调用编号默认放在a7寄存器, a0到a5寄存器则是存放参数
+- `int exit_code` 共享字段3: 进程的退出状态 (类似函数用返回值来代表执行情况)
+
+- `void *chan` 共享字段4: 进程睡眠的位置 / 进程等待的资源 (与sleeping状态相关)
+
+共享字段的含义: 进程B可能会访问/修改进程A的共享字段, 进程A的非共享字段只有自己关心
+
+因此, 为了保证状态访问/修改的原子性, 访问进程共享字段时通常需要先持有自旋锁
+
+我们在`kernel/proc/lifecycle.c`中定义了一个进程数组`proc_table`, 最多支持**N_PROC**个进程同时存在
+
+很自然的, 定义进程数组后, **proczero**将从元素变成指向元素的指针
+
+另外, 进程数组中的每一个进程都应该拥有一个全局的标识符PID, 我们维护一个全局的**next_pid**来支持这一点
+
+`proc_table`和之前遇到的`mmap_region_node_t node_list[N_MMAP]`都是资源仓库
+
+请你先完成下面三个函数, 实现仓库的有序管理
+
+- `proc_table_init` 对系统资源(static变量)进行初始化赋值 (调用`proc_pid_init`将**next_pid**设置为1)
+
+- `proc_slot_alloc` 从资源仓库申请一个空闲的进程结构体, 完成通用初始化逻辑, 上锁返回 (注意: p->context.ra应该设置为`proc_first_return`)
+
+- `proc_free` 向资源仓库释放一个进程结构体(及其包含的资源)
+
+之后, 你需要改写之前的 `proc_make_first`, 主要是以下两点:
+
+- 可以通过`proc_slot_alloc`申请**proczero**, 删去一些不必要的复制
+
+- 只需要完成**proczero**的初始化并解锁即可, 不应直接调用`arch_switch`逻辑
+
+最后, 在 `kernel/mem/kvm.c`的`kvm_init`中, 需要将内核栈映射从单个拓展到多个。`KSTACK`接收的是进程在数组中的下标, 每个栈之间留一页不映射。内核栈随数组槽位重复使用, `proc_free`不释放它。
+
+## 基于循环扫描的进程调度
+
+`main`函数做完所有初始化后, 会执行`proc_scheduler`启动调度器, 随后永不返回
+
+因此, 我们可以这样描述各个CPU最初执行流做的事情 (下面称它们为原生进程, QEMU有两个, VisionFive2有四个):
+
+- OpenSBI将控制权交给内核后, 各个原生进程经过`entry.S -> start.c -> main.c`进入main函数
+
+- 主核的原生进程完成系统资源初始化(包括proczero的准备), 每个原生进程完成所在核心的初始化
+
+- 所有原生进程在初始化完成后进入调度器死循环, 从初始化者变成调度选择与缓冲者
+
+**结合proc_sched和proc_scheduler来说明进程调度的过程:**
+
+- 原生进程执行调度器逻辑(`proc_scheduler`), 循环扫描进程数组, 找到一个处于RUNNABLE状态的用户进程A
+
+- 通过`arch_switch(原生进程上下文, 用户进程A上下文)`完成第一次执行流切换(`arch_switch`): 原生进程->用户进程A
+
+- 用户进程A使用`proc_sched`主动/被动释放CPU, 完成第二次执行流切换(`arch_switch`): 用户进程A->原生进程
+
+- 原生进程继续扫描进程数组, 找到新的处于RUNNABLE状态的用户进程B......
+
+**注意: 当原生进程执行时, 用`set_current(NULL)`清空本核的当前进程; 用户进程A执行时, 用`set_current`将它设为本核的当前进程**
+
+进程调度的算法非常简单, 但是切换逻辑非常严密和精巧, 值得你细细琢磨 
+
+仔细考虑调度器在进程调度中的选择与缓冲作用 (用户进程A切换到用户进程B需要两次上下文切换)
+
+理解上述逻辑后请完成 `proc_sched` 和 `proc_scheduler` 函数
+
+切换时, 调度器和进程要把进程锁交给对方释放, 以免两个CPU同时使用同一个进程的内核栈。进入`proc_sched`时应当只持有当前进程的锁, 关闭中断, 并已将状态改为非RUNNING。首次运行的进程还需要在`proc_first_return`中释放调度器交来的锁, 再调用`enter_user`。
+
+进程再次运行时可能已经换了CPU, 因此不要继续使用切换前的CPU编号。`proc_sched`要保存并恢复调用者在解锁后是否开启中断的设置, 可使用`arch_resume_interrupts`和`arch_set_resume_interrupts`, 不要把原CPU的中断嵌套计数复制过来。
+
+## 基于时钟的抢占式调度
+
+完成上面的事情后, 我们发现缺少一种强制性手段来打断长进程的执行, 可能导致排在后面的短进程长时间得不到响应
+
+出于实现简单的考虑, 我们可以在用户态和内核态的时钟中断处理完成后, 强迫当前进程主动交出CPU使用权
+
+请你完成`proc_yield`函数, 并在`kernel_trap`和`user_trap`的时钟处理后调用它 (先确认当前存在RUNNING进程), 将进程的状态从**RUNNING**改为**RUNNABLE**并调用`proc_sched`
+
+做完这些事情, 每个**RUNNABLE**进程相当于持有1个长度为1的时间片, 用完后就要交出CPU使用权, 等待下一次被调度
+
+## 进程状态转换
+
+我们定义了五种进程状态, 从冷到热依次是:
+
+- **unused** 进程已经死亡 / 进程还没初始化, 不持有任何资源
+
+- **zombie** 进程濒临死亡, 不会再有任何活动, 等待父进程回收
+
+- **sleeping** 进程睡眠, 通常是因为尝试获取某种资源但是失败了, 等待被唤醒
+
+- **runnable** 进程准备就绪, 随时可以运行
+
+- **running** 进程正在CPU上执行
+
+下面的图片显示了进程状态的转换过程, 大致可以分成3个部分:
+
+- 如果是短进程 (很快就能完成任务), 它会经历 `unused -> runnable -> running -> zombie -> unused`
+
+- 如果是长进程, 它会在前者的基础上多一些 `runnable -> running -> runnable -> running...` 的调度过程
+
+- 如果更复杂一些, 它会在前者的基础上多一些睡眠和唤醒的过程 `running -> sleeping -> runnable ->...`
+
+![pic](./pictures/01.jpg)
+
+## 进程生命周期-1: fork exit wait
+
+首先讨论图中蓝色部分的状态转换
+
+**1. 关于proc_fork--子进程复制**
+
+用户进程的产生只有以下两条路径:
+
+- proczero: 一切都是精心准备和填充的, 有一个自己的`proc_make_first`函数来规定所有细节
+
+- 其他进程: 通过`proc_fork`函数复制和继承父进程的状态
+
+从另一个视角来看, 所有活跃的用户进程构成了一个树形结构, 其中`proczero`是根节点, 比较特别
+
+`proc_fork`的主要工作包括以下几部分:
+
+- 通过`proc_slot_alloc`申请一个空闲的进程结构体
+
+- 复制父进程的用户内存、frame和mmap区域链, 子进程使用自己的锁、PID和内核栈
+
+- 记录父子关系
+
+- 设置子进程的返回值为0 (便于用户程序区分父进程和子进程)
+
+子进程复制的是父进程执行ecall时的frame, 用`arch_syscall_return`设置返回值并推进一次PC。父进程的返回值则交给`user_trap`处理, 不要让子进程再次执行同一条ecall。没有空闲进程槽时, `proc_fork`返回-1。
+
+你可能敏锐地发现了: 假设子进程和父进程毫无关系(两个不同的ELF文件), 完全复制父进程的状态并不合理
+
+我们将在lab-9引入`proc_exec`来解决这个问题, 典型的进程创建路径其实是: `fork` 搭建骨架, `exec` 填充血肉
+
+另一个值得考虑的问题是: 既然`proc_exec`会重新充填血肉, 那很多内存拷贝其实是不必要的
+
+是的, 典型的做法是利用**Page Fault**机制做**写时复制**, 让父子进程暂时共享只读页面, 等到写入时再复制物理页
+
+这与用户栈的按需分配不同: 栈增长时需要新页面, 写时复制则需要保留原页面的数据
+
+你可以参考xv6的相关实验 (copy-on-write) 来优化`proc_fork`的效率, 这里不做要求
+
+**2. 关于proc_exit--进程退出**
+
+进程退出的直观想法是: 调用`proc_free`从**RUNNING**状态直接进入**UNUSED**状态
+
+然而, 就像人无法亲自给自己办葬礼一样, 进程也无法主动杀死自己并回收资源
+
+**回收资源的逻辑不可能由一个已经不存在的进程来执行!**
+
+因此, 参考父进程创建子进程, 我们想到也可以让父进程回收子进程
+
+子进程只需要标记自己进入了**ZOMBIE**状态, 父进程知晓后就会来回收它了
+
+由于进程的树形结构, 还需要考虑一个问题:
+
+如果父进程A先于子进程A1 A2退出了, 谁来负责子进程A1 A2的退出善后呢?
+
+我们注意到`proczero`是一个永不退出的进程, 因此可以通过`proc_reparent`将这样的A1 A2"过继给"`proczero`
+
+最后, 子进程进入**ZOMBIE**状态前, 应该设置一个退出状态`exit_code`, 让父进程知道子进程的情况
+
+父进程和子进程可能同时在不同CPU上运行, 操作父子关系时要先锁祖先, 再锁后代。托孤应在当前进程进入ZOMBIE前完成, 按根进程、原父进程、孩子的顺序加锁, 遇到同一进程不重复加锁。不要拿着孩子的锁再去等待父亲或根进程的锁。
+
+**3. 关于proc_wait--父进程等待回收子进程**
+
+父进程会循环扫描进程数组, 直到发现自己某个孩子进入**ZOMBIE**状态
+
+随后调用`proc_free`完成子进程的回收释放工作
+
+扫描时先持有父进程的锁, 用原子操作读取`parent`筛选孩子, 再锁住匹配的孩子并重新检查关系, 不要逐个锁住无关进程。没有孩子时返回-1, `wait(0)`表示不接收退出状态, 非零地址则先复制退出状态再回收孩子。
+
+**4. 一种典型的组合使用方法**
 
 ```c
-static inline long arch_syscall6(long number, long x0, long x1, long x2,
-                                 long x3, long x4, long x5)
-{
-    register long a0 __asm__("a0") = x0;
-    register long a1 __asm__("a1") = x1;
-    register long a2 __asm__("a2") = x2;
-    register long a3 __asm__("a3") = x3;
-    register long a4 __asm__("a4") = x4;
-    register long a5 __asm__("a5") = x5;
-    register long a7 __asm__("a7") = number;
-    __asm__ volatile("ecall" : "+r"(a0)
-        : "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a5), "r"(a7) : "memory");
-    return a0;
+
+int pid = fork(); // 分支
+if (pid == 0) { // 子进程
+    do_something_1();
+    exit(0); // 退出
+} else { // 父进程
+    int state;
+    wait(&state); // 等待
+    do_something_2();
 }
+
 ```
 
-内核可以通过`arch_syscall_decode`从frame中拿到这些参数 (trapframe实在太好用了~)
+## 进程生命周期-2: sleep wakeup + 睡眠锁
 
-- 对于值传递, 从解码结果的`args`数组中取出对应参数即可
+接下来讨论图中黑色部分加入的影响
 
-- 对于地址传递, 必须考虑用户地址空间和内核地址空间不匹配的问题:
+首先考虑`proc_wait`不完善的地方:
 
-**用户传入的地址空间是基于用户页表的, 但是进入内核后使用的是内核页表**
+父进程等待子进程退出的时候, 会遍历进程数组, 找不到目标就调用`proc_yield`让出CPU控制权
 
-解决这个问题需要手动查询用户页表, 找到虚拟地址对应的物理地址, 之后再做数据迁移
+然而, 让出CPU后父进程还是**RUNNABLE**状态, 随时可能被调度, 这反而耽误子进程的执行
 
-请你完成`kernel/mem/uvm.c`的第一部分, 包括`copy_from_user`、`copy_to_user`、`copy_str_from_user`三个部分
+因此, 我们需要在**RUNNABLE**之下再建立一个层级(**SLEEPING**), 这个层级的进程不是无条件执行的, 而是依赖某种资源
 
-复制时还要考虑地址不对齐和跨页的情况。字符串最多复制给定长度, 遇到NUL就停止。如果达到上限仍未遇到NUL, 打印时不能继续读出缓冲区
+- 当进程无法获得这种资源, 就会从**RUNNING**状态进入**SLEEPING**状态, 不可被调度执行
 
-随后, 你需要补全`user_trap`中的系统调用的处理逻辑:
+- 当进程可以获得这种资源, 就会从**SLEEPING**状态进入**RUNNABLE**状态, 可以被调度执行
 
-- 调用`syscall_dispatch`进行分类跳转, 再通过`arch_syscall_return`写入结果并推进epc
+就像当时引入**串口中断**来解决轮询效率低下的问题, 这里引入睡眠态来解决**RUNNABLE**的无效调度问题
 
-- 补全三个具体的处理逻辑 `sys_test_copyin`、`sys_test_copyout`、`sys_test_copyinstr` (in `kernel/syscall/memory.c`)
+- 当父进程调用`proc_wait`时, 遍历一轮后就会执行`proc_sleep`, 将资源设置为自己
 
-- 注意: 这三个系统调用只服务于本次测试, 不是长期保存的系统调用
+- 当子进程调用`proc_exit`时, 会执行`proc_try_wakeup`, 将资源设置为父进程
 
-## 测试1：用户态和内核态的数据迁移
+理解了这部分后, 请实现下面三个函数:
 
-将下面的用户例程分别放入`user/init.c`测试
+- `proc_sleep` 当前进程睡眠, 等待某种资源
 
-测试逻辑: 
+- `proc_wakeup` 唤醒等待某种资源的全部进程
 
-- 用户读取内核中的数组 (1 2 3 4 5)
+- `proc_try_wakeup` 仅针对唤醒父进程的情况, 调用前已持有被唤醒进程的锁, 函数内不重复加锁
 
-- 用户将读到的数组传递给内核, 内核收到后打印出来
+一个值得思考的问题: `proc_sleep`传入资源的同时为何要传入一把锁, 它起到什么作用?
 
-- 用户将自己的字符串传递给内核, 内核收到后打印出来
+另一个值得观察的地方: 之前提到进程结构体里有一些字段会被共享访问, 请你找一找哪些地方涉及这样的共享, 以及特例是什么?
+
+完成这部分后, **kernel/proc/**的工作基本结束了, 请你将目光放到新增加的**kernel/lock/sleeplock.c**
+
+我们在自旋锁和进程睡眠唤醒机制的基础上, 建立了睡眠锁这种新的锁类别
+
+- 自旋锁的一致性保证依赖开关中断和原子指令, 获取资源失败时会不断尝试(忙等), 适合保护只被短期持有的资源
+
+- 睡眠锁的一致性保证依赖自旋锁, 获取资源失败后会让当前进程进入睡眠状态, 适合保护会被长期持有的资源
+
+请你完成睡眠锁的相关函数, 它的整体框架与自旋锁是完全一致的, 我们在后面的实验中会用到 (文件系统)
+
+## 相关系统调用
+
+我们在lab-5中已经建立了完善的系统调用流程, 所以功能完成后需要封装成系统调用, 便于在用户空间测试
+
+本次实验新增了以下系统调用, 用户接口在`user/sys.h`中
 
 ```c
-// in user/init.c
-#include "sys.h"
-
-void user_main(void)
-{
-    int L[5];
-    char* s = "hello, world"; 
-    syscall6(SYS_TEST_COPYOUT, (long)L, 0, 0, 0, 0, 0);
-    syscall6(SYS_TEST_COPYIN, (long)L, 5, 0, 0, 0, 0);
-    syscall6(SYS_TEST_COPYINSTR, (long)s, 0, 0, 0, 0, 0);
-    while(1);
-}
+long print_str(const char *str);   // 打印字符串
+long print_int(int num);           // 打印32位整数
+long getpid(void);                // 获取当前进程的pid
+long fork(void);                  // 进程复制
+long wait(int *status);           // 等待子进程退出
+void exit(int exit_code);         // 进程退出
+long sleep(unsigned long ntick);  // 进程睡眠ntick个时钟周期
 ```
 
-测试现象示意:
+其中前面的6个都比较简单, 这里不做详细说明, 重点介绍一下最后1个
 
-![pic](./pictures/01.png)
+这个系统调用的作用是让当前进程睡眠ntick个时钟周期 (默认设置下一个时钟周期大约0.1s)
 
-## 任务2：堆的手动管理与栈的自动管理
+它的工作逻辑是:
 
-上次实验中, 栈空间被设置为4KB, 堆空间被设置为0KB, 对于非常简单的`user/init.c`是足够的
+- 让当前进程以共享的时钟计数为资源, 进入睡眠状态
 
-然而, 现实世界的应用程序需要可以动态增长的栈和堆, 本次实验我们做一个初步的实现
+- 每当发生时钟中断, 系统时钟进行了更新, 就唤醒它执行检查逻辑
 
-### 堆的管理是手动的
+- 如果发现已经到达了目标时间, 就离开循环; 否则重新进入睡眠状态
 
-**堆-HEAP**为用户提供了一块连续的大范围内存空间, 它的生长方向是低地址到高地址
+实现它的方法:
 
-内核给用户程序提供了一个`sys_brk`系统调用, 允许用户改变堆顶的位置
+- 在`timer_update`中增加`proc_wakeup`逻辑
 
-`sys_brk`的效果可以进一步分为:
+- 完成`timer_wait`函数, 增加`proc_sleep`逻辑, 供`sys_sleep`调用
 
-- 空间增加: old_heap_top < new_heap_top 
+## 测试用例
 
-- 空间减少: old_heap_top > new_heap_top
+以下测试只需要修改**user/init.c**
 
-- 空间不变: old_heap_top == new_heap_top
-
-- 查询当前堆顶: new_heap_top == 0
-
-涉及内存页面的申请释放、用户页表的修改、`proc->heap_top`的更新
-
-请你完成`sys_brk`、`uvm_heap_grow`、`uvm_heap_ungrow`几个函数。非零堆顶需要页对齐且位于`[0x2000, MMAP_BEGIN]`, 非法请求返回-1
-
-### 栈的管理是自动的
-
-**栈-STACK**为用户的临时变量和函数执行提供了一块连续的内存空间, 它的生长方向是高地址到低地址
-
-用户程序无需显式地管理栈空间, 由内核根据用户需要进行自动管理 (自动的内存申请和映射)
-
-内核不会在进程初始化时直接分配一个很大的栈空间 (默认分配4KB), 而是根据程序运行的需要逐步分配足够大的空间
-
-当用户读或写一块未分配的地址空间时, 会触发**13号异常(Load Page Fault)** / **15号异常(Store/AMO Page Fault)**
-
-我们在`user_trap`里识别这两种异常, 然后调用`uvm_stack_grow`来处理缺页异常
-
-`uvm_stack_grow`首先判断发生page fault的地址 (放在stval寄存器) 是否是合理的栈扩展地址
-
-确认合法性后: 申请物理页面、修改用户页表、更新`proc->ustack_npage`, 随后重试原来的指令, 不推进epc
-
-需要提醒的是: 一次可以扩展多个页面, 扩展后不会发生收缩 (和堆的管理不同)
-
-### 边界检查
-
-需要提醒的是: 我们在栈和堆的中间区域里, 划分了一段地址空间作为离散内存空间的区域 (mmap_region)
-
-这块区域的起点地址被定义为`MMAP_BEGIN`, 终点被定义为`MMAP_END` (in `include/kernel/uvm.h`)
-
-因此, 栈的生长不应该越过`MMAP_END`, 堆的生长不应该越过`MMAP_BEGIN`
-
-mmap_region的详细介绍放在任务3和任务4, 这里只需要注意边界检查即可
-
-## 测试2：堆的手动管理与栈的自动管理
-
-**堆的管理**
-
-```c
-// in user/init.c
-#include "sys.h"
-
-#define PGSIZE 4096
-
-void user_main(void)
-{
-    long heap_top = 0;
-    
-    heap_top = brk(0);
-    heap_top = brk(heap_top + PGSIZE * 9);
-    heap_top = brk(heap_top);
-    heap_top = brk(heap_top - PGSIZE * 5);
-
-    while(1);
-}
-```
-
-你需要在`sys_brk`中增加一些调试性输出
-
-测试现象示意:
+**测试1** (测试现象示意)
 
 ![pic](./pictures/02.png)
 
-![pic](./pictures/03.png)
-
-**栈的管理**
-
-函数内定义非static的长数组就能让栈的大小超过4KB。下面用volatile保留实际的内存访问, 避免编译器消除测试所需的数组
-
-你也可以通过深度函数递归来实现类似的效果 (比如汉诺塔问题)
-
 ```c
-// in user/init.c
 #include "sys.h"
-
-#define PGSIZE 4096
 
 void user_main(void)
 {
-    volatile char tmp[PGSIZE * 4];
-
-    tmp[PGSIZE * 3] = 'h';
-    tmp[PGSIZE * 3 + 1] = 'e';
-    tmp[PGSIZE * 3 + 2] = 'l';
-    tmp[PGSIZE * 3 + 3] = 'l';
-    tmp[PGSIZE * 3 + 4] = 'o';
-    tmp[PGSIZE * 3 + 5] = '\0';
-
-    syscall6(SYS_TEST_COPYINSTR, (long)(tmp + PGSIZE * 3), 0, 0, 0, 0, 0);
-
-    tmp[0] = 'w';
-    tmp[1] = 'o';
-    tmp[2] = 'r';
-    tmp[3] = 'l';
-    tmp[4] = 'd';
-    tmp[5] = '\0';
-
-    syscall6(SYS_TEST_COPYINSTR, (long)tmp, 0, 0, 0, 0, 0);
-
-    while (1);
+	int pid = getpid();
+	if (pid == 1) {
+		print_str("\nproczero: hello ");
+		print_str("world!\n");
+	}
+	while (1);	
 }
 ```
 
-你需要在`user_trap`中增加一些调试性输出
+**测试2** (测试现象示意)
 
-测试现象示意:
+![pic](./pictures/03.png)
+
+请在内核代码合适的位置增加提示性输出
+
+```c
+#include "sys.h"
+
+void user_main(void)
+{
+	print_str("level-1!\n");
+	fork();
+	print_str("level-2!\n");
+	fork();
+	print_str("level-3!\n");
+	while(1);
+}
+```
+
+**测试3** (测试现象示意)
 
 ![pic](./pictures/04.png)
 
-## 任务3: mmap_region_node 仓库管理
-
-应用程序有了堆和栈就足够了吗? 应用程序有时需要临时申请一块内存空间, 过一会就释放掉
-
-- 用栈来申请的话无法手动释放 (释放函数里数组占用的空间?)
-
-- 用堆来申请的话可能面临碎片化风险 (堆更适合管理大片逻辑连续的内存空间)
-
-因此, 我们需要设计一种可以动态申请释放的离散内存资源管理方法
-
-直观的想法就是链表结构: 将多个内存资源节点通过链表链接在一起, 在进程结构体里存储表头!
-
-说明: 在真实的操作系统里, 堆、栈、内存映射区的细节和定位与我们这里说的有所区别
-
-结构体 `mmap_region_t` 用于描述一块连续地址空间, 它起始于`begin`, 包括`pages`个页面
-
-进程会记录地址空间中的第一个`mmap_region_t`, 各个资源节点通过`next`指针串联 (构成单链表, 按起始地址从低到高记录已分配区域)
+`str3`使用局部数组, 让这组测试实际读取复制后的用户栈。
 
 ```c
-/* mmap_region 描述了一个 mmap区域 */
-typedef struct mmap_region
-{
-    uint64 begin;             // 起始地址
-    uint64 pages;            // 管理的页面数量
-    struct mmap_region *next; // 链表指针
-} mmap_region_t;
-```
-
-理解这部分后我们继续考虑另一个问题: `mmap_region_t`结构体本身也是一种资源
-
-我们规定OS内核可以提供`N_MMAP`个这样的结构体, 各个进程需要有序获取该资源
-
-为了保证各个进程可以高效和有序地共享这种资源, 我们在`kernel/mem/mmap.c`里维护了一个资源仓库
-
-```c
-/* mmap_region_node 是 mmap_region 在仓库里的包装 */
-typedef struct mmap_region_node
-{
-    mmap_region_t mmap;
-    struct mmap_region_node *next;
-} mmap_region_node_t;
-
-
-// mmap_region_node_t 仓库(单向链表) + 链表头节点(不可分配) + 保护仓库的自旋锁
-static mmap_region_node_t node_list[N_MMAP];
-static mmap_region_node_t list_head;
-static spinlock_t list_lk;
-```
-
-具体来说:
-
-- 首先将 `mmap_region_t` 包装为 `mmap_region_node_t`, 以维护资源仓库的单链表结构
-
-- 然后通过全局的自旋锁 `list_lk` 确保任何时候只有一个进程在获取资源或释放资源
-
-- 提供`mmap_init`、`mmap_region_alloc`、`mmap_region_free`作为资源仓库的对外接口
-
-## 测试3: mmap_region_node 仓库管理
-
-我们先来测试一下, 作为资源仓库, 它能不能在多核竞争的条件下保证资源申请和释放的有序性
-
-完成前序任务和节点仓库后, 临时替换`kernel/main.c`中的main测试。QEMU双核、VisionFive2四核分别均分256个节点, 全部申请完成后再归还, 归还结束后由主核查看状态
-
-```c
-// in kernel/main.c
-#include <kernel/arch.h>
-#include <kernel/print.h>
-#include <kernel/mem.h>
-#include <kernel/trap.h>
-#include <kernel/uvm.h>
-#include <platform.h>
-#include <stdatomic.h>
-
-static atomic_bool started;
-static atomic_bool allocated[NCPU], returned[NCPU];
-static mmap_region_t *mmap_list[N_MMAP];
-
-void main(void)
-{
-    unsigned cpuid = arch_cpu_id();
-    if (arch_is_boot_cpu()) {
-        print_init();
-        pmem_init();
-        kvm_init();
-        kvm_inithart();
-        trap_init();
-        mmap_init();
-        mmap_show_nodelist();
-        printf("\n");
-        for (unsigned i = 0; i < NCPU; i++)
-            if (i != cpuid) assert(arch_start_cpu(i) == 0, "start cpu");
-        atomic_store_explicit(&started, true, memory_order_release);
-    } else {
-        while (!atomic_load_explicit(&started, memory_order_acquire));
-        kvm_inithart();
-    }
-    trap_inithart();
-    printf("cpu %d is booting!\n", (int)cpuid);
-
-    // 申请
-    unsigned begin = cpuid * N_MMAP / NCPU;
-    unsigned end = (cpuid + 1) * N_MMAP / NCPU;
-    for (unsigned i = begin; i < end; i++)
-        mmap_list[i] = mmap_region_alloc();
-    atomic_store_explicit(&allocated[cpuid], true, memory_order_release);
-
-    // 等待所有核完成申请
-    for (unsigned i = 0; i < NCPU; i++)
-        while (!atomic_load_explicit(&allocated[i], memory_order_acquire));
-
-    // 释放
-    for (unsigned i = begin; i < end; i++)
-        mmap_region_free(mmap_list[i]);
-    atomic_store_explicit(&returned[cpuid], true, memory_order_release);
-
-    // 等待所有核完成释放
-    for (unsigned i = 0; i < NCPU; i++)
-        while (!atomic_load_explicit(&returned[i], memory_order_acquire));
-    if (arch_is_boot_cpu()) mmap_show_nodelist();
-    arch_park();
-}
-```
-
-测试现象示意:
-
-![pic](./pictures/05.png)
-
-![pic](./pictures/06.png)
-
-- 第一部分的输出应该是 `node X index = X` (X从0增加到255)
-
-- 第二部分输出的node从0增加到255, index的顺序取决于各核归还节点的先后。图片展示了一种双核交错顺序, 实际应检查256个节点是否无重复、无遗漏
-
-## 任务4: mmap 与 munmap
-
-资源仓库的建立使得 `mmap_region_t` 结构体的申请和释放更加方便和安全, 服务于mmap和munmap操作
-
-我们以mmap为例, 从系统调用出发, 梳理它的逻辑过程:
-
-- 用户程序调用 `mmap(begin, len)` 申请一块内存空间, 内核的`sys_mmap`检查地址和字节长度是否合法
-
-- 调用`uvm_mmap(p, begin, len)`进行具体处理, 长度仍以字节为单位, 匿名映射使用RWU权限
-
-- `uvm_mmap()`首先创建一个新的 mmap_region_t 用于描述这块新的地址空间
-
-- 随后将这块 new_mmap_region 插入进程 mmap 链表的合适位置 (保持整体有序)
-
-- 新插入的节点可能和前面的节点相邻, 可能和后面的节点相邻, 也可能同时相邻
-
-- 考虑到仓库里资源受限的问题, 我们应该将相邻的节点进行尽可能的合并 (逻辑较为复杂, 建议你画图分析)
-
-- 我们提供了辅助函数`mmap_merge_regions()`用于帮助你完成这些合并, 你可以研究一下怎么用。它会释放被合并的节点, 但不修改next, 需要你维护好链表连接
-
-- 合并完成后, 进行物理页申请和页表修改的步骤 (这里比较简单)
-
-**注意: 当用户传入的begin=0时, 通过`uvm_mmap_find`从头到尾扫描, 找到第一个足够大的空间即可**
-
-**另外: proc结构体已经增加mmap字段, 记得在proc_make_first函数中将它初始化为空, 并在创建进程前初始化节点仓库**
-
-系统调用需检查地址和长度的页对齐、长度非零、加法溢出及mmap区域边界, 非法参数返回-1。底层分配、映射或解除映射失败时按接口约定panic
-
-munmap的整体流程与mmap相近, 你应该具备举一反三的能力, 这里不做详细介绍
-
-## 测试4: mmap 与 munmap
-
-我们给出了测试用例用于检测uvm_mmap()和uvm_munmap()中可能的遗漏和错误
-
-请你理解它在测试哪些情况, 以及预期的输出是什么样的
-
-当然, 你应该补充更多测试用例, 以确保实现的完备性
-
-```c
-// in user/init.c
 #include "sys.h"
 
-// 与内核保持一致
-#define VA_MAX       (1ul << 38)
-#define PGSIZE       4096
-#define MMAP_END     (VA_MAX - (16 * 256 + 2) * PGSIZE)
-#define MMAP_BEGIN   (MMAP_END - 64 * 256 * PGSIZE)
+#define PGSIZE 4096
+#define VA_MAX (1ul << 38)
+#define MMAP_END (VA_MAX - (2 + 16 * 256) * PGSIZE)
+#define MMAP_BEGIN (MMAP_END - 64 * 256 * PGSIZE)
 
 void user_main(void)
 {
-    // 建议画图理解这些地址和长度的含义
+	int pid, i;
+	char *str1, *str2;
+	volatile char str3[] = "STACK_REGION\n\n";
+	char *tmp1 = "MMAP_REGION\n", *tmp2 = "HEAP_REGION\n";
+	
+	str1 = (char*)mmap(MMAP_BEGIN, PGSIZE);
+	for (i = 0; tmp1[i] != '\0'; i++)
+		str1[i] = tmp1[i];
+	str1[i] = '\0';	
 
-    // sys_mmap 测试 
-    mmap(MMAP_BEGIN + 4 * PGSIZE, 3 * PGSIZE);
-    mmap(MMAP_BEGIN + 10 * PGSIZE, 2 * PGSIZE);
-    mmap(MMAP_BEGIN + 2 * PGSIZE,  2 * PGSIZE);
-    mmap(MMAP_BEGIN + 12 * PGSIZE, 1 * PGSIZE);
-    mmap(MMAP_BEGIN + 7 * PGSIZE, 3 * PGSIZE);
-    mmap(MMAP_BEGIN, 2 * PGSIZE);
-    mmap(0, 10 * PGSIZE);
+	str2 = (char*)brk(0);
+	brk((long long int)str2 + PGSIZE);
+	for (i = 0; tmp2[i] != '\0'; i++)
+		str2[i] = tmp2[i];
+	str2[i] = '\0';	
 
-    // sys_munmap 测试
-    munmap(MMAP_BEGIN + 10 * PGSIZE, 5 * PGSIZE);
-    munmap(MMAP_BEGIN, 10 * PGSIZE);
-    munmap(MMAP_BEGIN + 17 * PGSIZE, 2 * PGSIZE);
-    munmap(MMAP_BEGIN + 15 * PGSIZE, 2 * PGSIZE);
-    munmap(MMAP_BEGIN + 19 * PGSIZE, 2 * PGSIZE);
-    munmap(MMAP_BEGIN + 22 * PGSIZE, 1 * PGSIZE);
-    munmap(MMAP_BEGIN + 21 * PGSIZE, 1 * PGSIZE);
+	print_str("\n--------test begin--------\n");
+	pid = fork();
 
-    while(1);
+	if (pid == 0) { // 子进程
+		print_str("child proc: hello!\n");
+		print_str(str1);
+		print_str(str2);
+		print_str((const char *)str3);
+		exit(1234);
+	} else { // 父进程
+		int exit_state = 0;
+		wait(&exit_state);
+		print_str("parent proc: hello!\n");
+		print_int(pid);
+		if (exit_state == 1234)
+			print_str("good boy!\n");
+		else
+			print_str("bad boy!\n");
+	}
+
+	print_str("--------test end----------\n");
+
+	while (1);
+	
 }
 ```
 
-请你在`sys_mmap()`和`sys_munmap()`中增加提示性输出
+**测试4** (测试现象示意)
+
+![pic](./pictures/05.png)
+
+请在内核代码合适的位置增加提示性输出
 
 ```c
-    proc_t *p = myproc();
-    uvm_show_mmaplist(p->mmap);
-    vm_print(p->pgtbl);
-    printf("\n");
+#include "sys.h"
+
+void user_main(void)
+{
+	int pid = fork();
+	if (pid == 0) {
+		print_str("Ready to sleep!\n");
+		sleep(30);
+		print_str("Ready to exit!\n");
+		exit(0);
+	} else {
+		wait(0);
+		print_str("Child exit!\n");
+	}
+	while(1);
+}
 ```
 
-测试现象示意:
+**温馨提示:** 
 
-![pic](./pictures/07.png)
+- 测试前, 请先理解以上测试用例在测试什么, 并对测试结果有一个预期 
 
-![pic](./pictures/08.png)
-
-![pic](./pictures/09.png)
-
-![pic](./pictures/10.png)
-
-![pic](./pictures/11.png)
-
-![pic](./pictures/12.png)
-
-![pic](./pictures/13.png)
-
-![pic](./pictures/14.png)
-
-## 任务5: 页表的复制与销毁
-
-虽然目前我们只有一个进程且永不退出，但是需要为下一个实验做一些准备
-
-你需要完成页表复制和销毁的函数 destroy_pgtbl() 和 uvm_copy_pgtbl()
-
-需要提醒的是:
-
-- 第一个函数考虑如何使用递归完成。`uvm_destroy`已先解除trampoline和frame的映射, 并释放frame, 递归部分只需回收普通用户页和各级页表页
-
-- 第二个函数深入理解用户地址空间各个区域的特点, 用`uvm_copy_range`复制代码、堆、栈和已分配mmap区域, 不复制trampoline、frame或mmap节点
-
-## 测试5: 页表的复制与销毁
-
-请你参考前4个测试点的设计, 自行决定如何测试页表的复制和销毁
+- 尽量多补充一些其他测试用例以验证代码的正确性
 
 **尾声**
 
-本次实验大概分成以下三个逻辑阶段:
+第二阶段, 我们围绕进程管理的主题, 基于一阶段构建的基础设施
 
-- 首先关注如何实现用户态和内核态的数据传递 (以trapframe为媒介), 并建立规范的系统调用流程
+从一到多, 从易到难地构建了进程管理模块, 同时完善和加强了**lock | mem | syscall | trap**模块
 
-- 随后讨论了用户态内存空间的管理: 堆、栈、mmap_region
+截至lab-6, **进程管理**和**内存管理**的主要内容已经相对完善了
 
-- 最后讨论了用户页表整体的复制和销毁, 为下一个实验做准备
+但是还有一个大问题没有解决: 只有CPU和内存的操作系统, 掉电后就什么都不剩了......
 
-经过两次实验的打磨, proczero现在已经比较强大和完善了, 但是似乎有些孤单?
+我们将在第三阶段(lab-7到lab-9)引入磁盘这种关键外设, 它可以在断电的情况下保存数据
 
-**我们将在下一个实验引入它的子子孙孙, 从单进程走向多进程！**
+最重要的, 我们将**基于磁盘自底向上地构建文件系统**, 并赋能内存管理和进程管理模块
+
+**欢迎来到文件系统的世界!**
 
 ## 进阶目标
 
-### mmap 属性与权限扩展
+### 超时 wait
 
-本次实验的匿名映射都允许用户读写。如果一块区域只用来保存只读数据, 是否可以禁止写入？当区域有了不同权限, 合并相邻节点时也需要考虑这些差异。
+本次实验中, 父进程会一直等待孩子退出。如果孩子迟迟不能完成任务, 父进程也就无法继续做其他事情。超时等待允许父进程在等待一段时间后返回, 再决定是否继续等待。
 
-请你尝试为mmap增加权限参数, 从区域描述和页表项入手, 再比较相邻但权限不同的映射能否正确保留。观察区域链、页表权限以及解除映射后的状态, 文件映射可以留到完成文件系统实验后继续。
+请你为wait增加超时参数, 可以从睡眠条件和时钟唤醒入手。分别让孩子在截止时间之前、之后和附近退出, 观察返回值与资源回收情况, 想一想超时和孩子退出同时发生时该如何处理, 避免遗漏唤醒或重复回收。
 
-### 用户态 malloc/free
+### 可切换的调度策略
 
-brk和mmap帮助用户程序获得内存, 但程序经常只需要几十个字节。malloc/free可以在这些较大的内存区域中管理小块空间, 让用户按所需大小申请并单独释放。
+循环扫描让每个就绪进程轮流得到CPU, 但不同任务的需要未必相同。一直进行计算的任务与经常等待资源的任务放在一起时, 调度顺序会影响它们的响应速度。
 
-请你尝试在brk或匿名映射之上实现用户态的malloc/free, 从记录块大小和空闲块开始, 再尝试拆分大块、合并相邻空闲块。反复申请不同大小的内存并释放, 观察碎片和占用空间, 检查返回地址的对齐以及各块数据是否互相覆盖。
+请你尝试另一种调度策略, 可以先把选取进程的规则与上下文切换分开, 切换时仍按本章的方式交接进程锁。构造计算密集和频繁睡眠的两组任务, 记录等待时间和获得CPU的次数, 比较不同策略的公平性与响应速度。
 
-### 统一区域管理与 lazy allocation
+### tickless
 
-本次实验分别管理堆、栈和匿名映射, 但它们都描述了一段用户地址空间。如果先记录合法的区域, 等到第一次访问时再分配物理页, 没有用到的部分就可以暂时不占用物理内存。这种做法称为延迟分配 (lazy allocation)。
+即使没有可运行进程, 周期时钟仍会不断打断CPU。tickless的做法是根据下一件需要处理的事情设置定时器, 例如最近一个睡眠进程的唤醒时间, 从而减少空闲时的中断。
 
-请你尝试用统一的区域描述记录这些空间, 再让缺页处理区分“合法但尚未分配”和“非法地址”。比较访问前后的物理页占用, 并测试页表复制、解除映射和用户数据迁移, 观察这些操作是否也能处理尚未分配的页面。
+请你尝试用睡眠队列记录截止时间, 并据此设置下一次时钟中断。比较空闲时的中断次数, 观察多个进程能否按时唤醒, 同时考虑其他核加入一个更早到期的等待时, 应如何通知负责计时的核心。

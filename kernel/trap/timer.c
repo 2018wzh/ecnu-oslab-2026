@@ -1,6 +1,8 @@
 #include <kernel/trap.h>
 #include <kernel/arch.h>
 #include <kernel/print.h>
+// TODO(lab-6): 持有 tick 条件锁检查经过时间，proc_sleep 等待；tick 更新后 wakeup。
+void timer_wait(uint64 ticks) { (void)ticks; panic("TODO(lab-6): timer_wait"); }
 #include <asm/csr.h>
 #include <asm/sbi.h>
 #include <platform.h>
@@ -16,6 +18,7 @@ void timer_init(void)
         panic("SBI timer init failed");
 }
 /* 全局系统时钟的更新；仅启动核调用。 */
+// TODO(lab-6): 更新 ticks 后在条件锁内 wakeup 等待时钟通道的进程。
 // TODO(lab-3): 同步增加共享 ticks；不在此续订各核的硬件定时器。
 void timer_update(void) { panic("TODO(lab-3): timer_update"); }
 /* 教师中断外围：每核续订，启动核记账。

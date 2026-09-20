@@ -25,4 +25,5 @@ void timer_update(void);
 void timer_tick(void);
 /* 同步读取系统滴答，不是直接读取硬件 time。 */
 uint64 timer_ticks(void);
+void timer_wait(uint64 ticks);
 #endif

@@ -43,3 +43,20 @@ void pop_off(void)
     if (arch_irq_enabled() || irq_state[cpu].depth == 0) panic("unbalanced pop_off");
     if (--irq_state[cpu].depth == 0 && irq_state[cpu].enabled) arch_irq_enable();
 }
+
+/* 教师切换外围：只在关闭中断且唯一持锁时访问本核恢复策略。 */
+unsigned arch_interrupt_depth(void)
+{
+    assert(!arch_irq_enabled(), "interrupt depth: interrupts enabled");
+    return irq_state[arch_cpu_id()].depth;
+}
+bool arch_resume_interrupts(void)
+{
+    assert(arch_interrupt_depth() == 1, "resume interrupts: nesting");
+    return irq_state[arch_cpu_id()].enabled;
+}
+void arch_set_resume_interrupts(bool enabled)
+{
+    assert(arch_interrupt_depth() == 1, "resume interrupts: nesting");
+    irq_state[arch_cpu_id()].enabled = enabled;
+}

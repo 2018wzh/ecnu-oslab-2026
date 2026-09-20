@@ -5,6 +5,7 @@
 #include <kernel/arch.h>
 #include <kernel/print.h>
 #include <asm/csr.h>
+// TODO(lab-6): 时钟处理完成后，存在 Running 当前进程时 yield；恢复后保全原 PC/status。
 /* TODO(lab-4): 关闭中断的入口中安装内核向量，确认来自 U-mode。
  * trampoline 已保存用户 PC/status；处理期间保全 frame 中的返回状态。
  * 时钟/外部中断复用 lab-3；其他无法处理的陷阱报告原因、PC、stval 后 panic。

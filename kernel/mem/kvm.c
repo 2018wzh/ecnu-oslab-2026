@@ -26,7 +26,8 @@ void vm_unmappages(pgtbl_t root, uint64 va, uint64 len, bool free_pages)
 { (void)root; (void)va; (void)len; (void)free_pages; panic("TODO(lab-2): vm_unmappages"); }
 // TODO(lab-2): 映射内核代码 RX、只读区 R、数据与可分配区 RW、UART 和 PLIC RW。
 // 不设置 U，不映射固件保留区；CLINT 由固件管理，PLIC 映射沿用 lab-2，中断驱动由 trap 模块使用。
-// TODO(lab-4): 同时映射 trampoline RX（不设 U），内核池分配首进程栈页并映射 KSTACK(0) RW。
+// TODO(lab-4): 同时映射 trampoline RX（不设 U）。
+// TODO(lab-6): 内核池分配 32 个常驻栈页，按槽索引映射 KSTACK(i) RW，各一页，间隔保护页。
 // 保留相邻保护页及 TRAPFRAME 对应位置不映射；在激活/发布页表前完成。
 void kvm_init(void) { panic("TODO(lab-2): kvm_init"); }
 void kvm_inithart(void)

@@ -27,6 +27,7 @@ void trap_inithart(void)
  * scause 是原因，frame->epc 是被打断的 PC，stval 是随原因变化的附加信息。
  * 先确认来源和中断状态，再区分中断、异常并分派；不要截断完整原因号。
  */
+// TODO(lab-6): 时钟处理完成后，存在 Running 当前进程时 yield；恢复后保全原 PC/status。
 void kernel_trap(trapframe_t *frame)
 {
     uint64 sepc = frame->epc, sstatus = frame->status;
